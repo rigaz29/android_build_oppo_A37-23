@@ -36,6 +36,12 @@ turun status menjadi opsional.
 Android 16 membuang mesin GLES lama, jadi `debug.renderengine.backend=gles` yang
 dipakai 22.2 menjadi tidak bermakna dan perangkat akan diam-diam mendapat SkiaGL.
 
+**4. LineageOS 23.2 tidak lagi mengenal msm8916.**
+`grep -c msm8916` pada `hardware/qcom-caf/common` 23.2 menghasilkan **0** di
+`qcom_boards.mk`, `qcom_defs.mk`, dan `BoardConfigQcom.mk`; platform tertua yang
+tersisa `msm8937`. ULH `legacy_support_patches` mengembalikannya. Tanpa itu
+`QCOM_HARDWARE_VARIANT` tidak terisi dan pohon tidak bisa dibangun untuk A37.
+
 Rinciannya, lengkap dengan kutipan kode dan nomor baris, ada di `PLAN-LOS23.md`.
 
 ## Basis

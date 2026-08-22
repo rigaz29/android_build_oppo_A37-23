@@ -511,6 +511,59 @@ LineageOS membuang fork-nya. ULH punya `lineage-23.2`. **Belum diperiksa.**
 
 ---
 
+## 7b. Sumber patch: dua yang saling melengkapi
+
+Set patch n7000 menyebut tiga sumber lain. Ketiganya diperiksa:
+
+| Sumber | Branch | Nilai |
+|---|---|---|
+| `Ultra-Legacy-Hippeastrum/legacy_support_patches` | **`lineage-23.2`** | **wajib** — 38 patch, termasuk 2 khusus QCOM |
+| `J0SH1X/n7000_android_16_patches` | `lineage-23.0` | rujukan saja; berisi dump `uncommitted.diff` per repo, bukan patch terstruktur, dan bukan 23.2 |
+| `rINanDO/galaxys2-patches` | `lineage-21.0` | terlalu tua; README n7000 sendiri menyebutnya "as reference" |
+
+### Temuan yang menghalangi build: msm8916 dihapus dari lapisan QCOM
+
+LineageOS 23.2 **tidak lagi mengenal msm8916 sama sekali**. Diperiksa langsung di
+`src/qcom-common-23.2`:
+
+```
+$ grep -c msm8916 qcom_boards.mk qcom_defs.mk BoardConfigQcom.mk
+qcom_boards.mk:0
+qcom_defs.mk:0
+BoardConfigQcom.mk:0
+```
+
+Platform tertua yang tersisa adalah `msm8937`. Yang hilang, dikembalikan oleh
+`legacy_support_patches/hardware/qcom-caf/common/`:
+
+```
+QCOM_BOARD_PLATFORMS += msm8916
+BR_FAMILY := msm8909 msm8916
+QCOM_HARDWARE_VARIANT := msm8916
+MSM_VIDC_TARGET_LIST := $(BR_FAMILY)
+```
+
+Dua patch: `0001-Revert-QCOM-RIP-pre-UM-families.patch` dan
+`0002-QCOM-Bring-back-legacy-platform-definitions.patch`.
+
+Tanpa ini `QCOM_HARDWARE_VARIANT` tidak pernah terisi dan pemilihan HAL QCOM
+patah. Ini bukan penyetelan, melainkan syarat agar pohon bisa dibangun untuk A37.
+
+### Konsekuensi: dua set patch dipakai bersama, bukan salah satu
+
+Keduanya menutupi celah yang berbeda, dan tidak saling menggantikan:
+
+| Set | Jumlah | Menutupi | Kelemahan untuk A37 |
+|---|---|---|---|
+| n7000 (zhafknight, dari GSI/MisterZtr) | 89 | BPF-less, cgroup v1, kernel legacy | Exynos 4210 — **nol** patch QCOM |
+| ULH `legacy_support_patches` | 38 | QCOM pre-UM, HIDL, hwbinder, IPsec | tidak memuat rantai BPF-less selengkapnya (hanya 1 patch Connectivity) |
+
+Rencana: ambil rantai BPF-less dan kompatibilitas kernel legacy dari set n7000,
+ambil lapisan QCOM dan HIDL dari ULH, saring yang khas Exynos (Broadcom Wi-Fi,
+RIL v6/v8/v9, `mkbootimg --dt`).
+
+---
+
 ## 8. Device tree
 
 `acroreiser/android_device_lenovo_a6010`: 61 commit dari `lineage-22.2` ke
@@ -545,7 +598,7 @@ Setiap fase punya syarat lulus. Jangan lanjut sebelum terpenuhi.
 | Fase | Isi | Lulus bila |
 |---|---|---|
 | **0** | ~~Pertanyaan terbuka~~ — keduanya sudah terjawab: cgroup v2 (K2a) dan RenderEngine (bagian 7) | selesai |
-| **1** | Siapkan manifest 23.2 + local manifest A37, sinkronkan pohon | `repo sync` selesai |
+| **1** | Siapkan manifest 23.2 + local manifest A37, sinkronkan pohon, lalu terapkan 2 patch QCOM pre-UM | `repo sync` selesai dan `QCOM_HARDWARE_VARIANT` terisi msm8916 |
 | **2** | K3 (syscall) + K5 (locking). **Jangan aktifkan K1 dulu** | kernel terbangun, boot ke bootanimation |
 | **3** | Userspace: system/core cgroup, bionic, sepolicy legacy | boot sampai homescreen |
 | **4** | Terapkan rantai patch BPF-less (9 patch, lihat K2b) | tidak bootloop, jaringan hidup tanpa BPF |
@@ -606,14 +659,17 @@ ulh/                              bionic, system_core, system_sepolicy,
 Rujukan patch (di `ref/`):
 
 ```
-zk-patches    zhafknight/los_patches — 89 patch LOS 23.2 untuk n7000 (kernel 3.0)
-gsi-23.2      MisterZtr/LineageOS_gsi branch lineage-23.2
-dt-a37        device tree A37 lineage-22
+zk-patches         zhafknight/los_patches — 89 patch LOS 23.2 untuk n7000 (kernel 3.0)
+gsi-23.2           MisterZtr/LineageOS_gsi branch lineage-23.2
+ulh-patches-23.2   ULH legacy_support_patches — 38 patch, termasuk 2 khusus QCOM
+j0sh1x             J0SH1X n7000_android_16_patches — dump diff, lineage-23.0, rujukan
+dt-a37             device tree A37 lineage-22
 ```
 
-Sumber lain yang disebut README n7000 dan belum diperiksa:
-`J0SH1X/n7000_android_16_patches`, `rINanDO/galaxys2-patches`,
-`Ultra-Legacy-Hippeastrum/legacy_support_patches`.
+Ditambahkan ke `src/`: `qcom-common-23.2` (hardware/qcom-caf/common 23.2), dipakai
+membuktikan msm8916 sudah dihapus dari lapisan QCOM.
+
+`rINanDO/galaxys2-patches` tidak diunduh — mentok di `lineage-21.0`.
 
 Belum diunduh: `android_device_qcom_sepolicy` (`lineage-23.2-legacy`),
 `android_hardware_qcom-caf_common`, `MisterZtr/LineageOS_gsi`, device tree A37
