@@ -1095,6 +1095,67 @@ dan HAL vendor bisa punya jalur fatal sejenis, dan itu hanya muncul di perangkat
 
 ---
 
+## 8f. Backport kernel saja tidak cukup — updater berjalan di kernel recovery
+
+ROM dengan `MADV_WIPEONFORK` di kernel **tetap gagal flash dengan galat yang
+persis sama**. Sebabnya sederhana dan seharusnya saya periksa sebelum meminta
+flash ulang:
+
+> TWRP adalah image recovery terpisah dengan **kernelnya sendiri**. `update-binary`
+> berjalan di atas kernel TWRP 3.7.0 yang lama, bukan kernel ROM.
+
+Jadi backport kernel membuat ROM bisa **boot**, tapi tidak membuatnya bisa
+**dipasang** dari recovery lama. Dua masalah berbeda yang gejalanya identik.
+
+### Kenapa tidak membangun TWRP baru
+
+Bisa, tapi ditolak karena tiga alasan:
+
+- ROM ini sudah memuat `recovery.img` dengan kernel yang benar; yang bermasalah
+  hanya recovery lama yang sudah terpasang
+- membangun TWRP jadi proyek tersendiri, sementara masalahnya bisa diselesaikan
+  di satu berkas
+- ROM yang hanya bisa dipasang dari recovery khusus itu rapuh — terkunci selamanya
+  pada satu recovery
+
+### Perbaikan di bionic
+
+`libc/upstream-openbsd/android/include/arc4random.h`:
+
+```c
+if (madvise(p, size, MADV_WIPEONFORK) == -1) {
+  if (errno == EINVAL || errno == ENOSYS) {
+    g_arc4random_wipeonfork_works = 0;
+  } else {
+    async_safe_fatal("arc4random data MADV_WIPEONFORK failed: %m");
+  }
+}
+```
+
+Jaminan keamanannya **tidak dibuang**. `_rs_forkdetect()` yang semula stub kosong
+(*"Not needed thanks to the MADV_WIPEONFORK below"*) mengambil alih lewat deteksi
+PID dan menol-kan `rs` beserta `rsx`, meniru persis akibat `MADV_WIPEONFORK`.
+Kontraknya dibaca dari `arc4random.c:112-122`, bukan diduga.
+
+Pada kernel yang mendukung, jalur PID tidak pernah aktif — biayanya satu
+pemeriksaan `int`.
+
+### Ditulis dalam C polos
+
+Versi pertama memakai `bool`, `nullptr`, dan `__predict_true`. `arc4random.h`
+hanya di-include `arc4random.c` — berkas **C** yang tidak memakai satu pun
+konstruksi itu, jadi kompilasi pasti gagal. Tertangkap sebelum build, menghemat
+satu siklus sembilan menit.
+
+### Kedua perbaikan saling melengkapi
+
+| Perbaikan | Menyelesaikan |
+|---|---|
+| Kernel `MADV_WIPEONFORK` | ROM bisa **boot** |
+| bionic `arc4random` | ROM bisa **dipasang** dari recovery lama |
+
+---
+
 ## 9. Urutan kerja
 
 Setiap fase punya syarat lulus. Jangan lanjut sebelum terpenuhi.
