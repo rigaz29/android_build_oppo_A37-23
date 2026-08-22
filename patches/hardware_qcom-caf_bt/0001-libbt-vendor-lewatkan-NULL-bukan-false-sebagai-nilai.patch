@@ -1,0 +1,74 @@
+From f320fef77c8e2a5d5ddcd4a087a9100915125aee Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Sat, 22 Aug 2026 15:46:04 +0000
+Subject: [PATCH] libbt-vendor: lewatkan NULL, bukan false, sebagai nilai
+ default property_get
+
+Clang r563880c di Android 16 menolak empat pemanggilan di bt_vendor_qcom.c:
+
+  bt_vendor_qcom.c:343:49: error: initialization of pointer of type
+    'const char *' to null from a constant boolean expression
+     property_get(BT_VND_FILTER_START, value, false);
+
+Parameter ketiga property_get bertipe const char* (nilai default), sedangkan
+kode melewatkan false. Compiler lama menerimanya diam-diam karena false meluruh
+menjadi 0 lalu NULL; yang baru menolaknya.
+
+Mengganti false dengan NULL mempertahankan perilaku persis, bukan mengubahnya --
+NULL memang nilai yang selama ini dihasilkan.
+
+Bahwa NULL adalah idiom yang benar di sini bukan tebakan: berkas yang sama sudah
+memakainya di enam pemanggilan lain (baris 183, 205, 724, 939, 1472). Keempat
+baris yang diperbaiki justru yang menyimpang dari gaya berkasnya sendiri.
+
+Baris yang disentuh: 343, 909, 927, 1054.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: Ie742199624071cc1065a70a671ed476f5596496a
+---
+ libbt-vendor/src/bt_vendor_qcom.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/libbt-vendor/src/bt_vendor_qcom.c b/libbt-vendor/src/bt_vendor_qcom.c
+index b855723..b89a4d5 100644
+--- a/libbt-vendor/src/bt_vendor_qcom.c
++++ b/libbt-vendor/src/bt_vendor_qcom.c
+@@ -340,7 +340,7 @@ int start_hci_filter() {
+        int i, init_success = -1;
+        char value[PROPERTY_VALUE_MAX] = {'\0'};
+ 
+-       property_get(BT_VND_FILTER_START, value, false);
++       property_get(BT_VND_FILTER_START, value, NULL);
+ 
+        if (strcmp(value, "true") == 0) {
+            ALOGI("%s: hci_filter has been started already", __func__);
+@@ -906,7 +906,7 @@ userial_open:
+                     case BT_SOC_ROME:
+                         {
+                             wait_for_patch_download(is_ant_req);
+-                            property_get("ro.vendor.bluetooth.emb_wp_mode", emb_wp_mode, false);
++                            property_get("ro.vendor.bluetooth.emb_wp_mode", emb_wp_mode, NULL);
+                             if (!is_soc_initialized()) {
+                                 char* dlnd_inprog = is_ant_req ? "ant" : "bt";
+                                 if (property_set(PREFIX "wc_transport.patch_dnld_inprog", dlnd_inprog) < 0) {
+@@ -924,7 +924,7 @@ userial_open:
+                                 userial_clock_operation(fd, USERIAL_OP_CLK_ON);
+ 
+                                 if(strcmp(emb_wp_mode, "true") == 0) {
+-                                    property_get("ro.vendor.bluetooth.wipower", wipower_status, false);
++                                    property_get("ro.vendor.bluetooth.wipower", wipower_status, NULL);
+                                     if(strcmp(wipower_status, "true") == 0) {
+                                         check_embedded_mode(fd);
+                                     } else {
+@@ -1051,7 +1051,7 @@ userial_open:
+                         break;
+                     case BT_SOC_CHEROKEE:
+                         {
+-                            property_get("ro.vendor.bluetooth.emb_wp_mode", emb_wp_mode, false);
++                            property_get("ro.vendor.bluetooth.emb_wp_mode", emb_wp_mode, NULL);
+                             retval = start_hci_filter();
+ 
+                             if (retval < 0) {
+-- 
+2.43.0
+

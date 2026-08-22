@@ -913,11 +913,31 @@ dikerjakan demi eBPF. Karena jalur yang dipilih userspace BPF-less, kernel
 
 ### Tiga kegagalan build, tiga sumber perbaikan berbeda
 
-| Kegagalan | Sumber perbaikan | Status |
-|---|---|---|
-| 2 modul HAL hilang (vibrator, livedisplay) | migrasi HIDL→AIDL | ditunda ke Fase 6 |
-| `hardware/display_defs.h` tidak ditemukan | ULH `legacy_support_patches` | diterapkan |
-| `attribute vendor_hal_soter_client is not declared` | patch kit 22.2 kita sendiri | diterapkan |
+| # | Kegagalan | Kelas | Sumber perbaikan |
+|---|---|---|---|
+| 1 | 2 modul HAL hilang (vibrator, livedisplay) | HIDL dihapus | ditunda ke Fase 6 |
+| 2 | `hardware/display_defs.h` tidak ditemukan | header dihapus | ULH `legacy_support_patches` |
+| 3 | `attribute vendor_hal_soter_client is not declared` | sepolicy | patch kit 22.2 kita sendiri |
+| 4 | `unknown type hal_lineage_livedisplay_hwservice` | HIDL dihapus | konsekuensi keputusan #1 |
+| 5 | `property_get(..., false)` ditolak | **compiler makin ketat** | perbaikan sendiri |
+
+Kegagalan #5 berbeda kelas dari empat sebelumnya. Empat pertama soal API atau
+berkas yang hilang; yang kelima soal kode lama yang sebenarnya selalu salah tapi
+baru sekarang ditolak:
+
+```
+bt_vendor_qcom.c:343:49: error: initialization of pointer of type 'const char *'
+                         to null from a constant boolean expression
+   property_get(BT_VND_FILTER_START, value, false);
+```
+
+Parameter ketiga bertipe `const char*`; kode melewatkan `false`. Clang r563880c
+menolaknya. Diganti `NULL` — mempertahankan perilaku persis, karena itu memang
+nilai yang selama ini dihasilkan. Bahwa `NULL` idiom yang benar terbukti dari
+berkas yang sama: enam pemanggilan lain sudah memakainya.
+
+Kelas ini biasanya datang bergerombol, jadi perkirakan muncul lagi di blob CAF
+lain.
 
 Yang kedua membuktikan keputusan Fase 0 bahwa `legacy_support_patches` wajib:
 set n7000 berbasis Exynos tidak akan pernah membawa patch display QCOM.
