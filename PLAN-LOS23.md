@@ -525,35 +525,143 @@ Set patch n7000 menyebut tiga sumber lain. Ketiganya diperiksa:
 | `Ultra-Legacy-Hippeastrum/legacy_support_patches` | **`lineage-23.2`** | **wajib** — 38 patch, termasuk 2 khusus QCOM |
 | `J0SH1X/n7000_android_16_patches` | `lineage-23.0` | rujukan saja; berisi dump `uncommitted.diff` per repo, bukan patch terstruktur, dan bukan 23.2 |
 | `rINanDO/galaxys2-patches` | `lineage-21.0` | terlalu tua; README n7000 sendiri menyebutnya "as reference" |
-| `Mi-Thorium` (organisasi) | `a11`–`a14` | **tidak relevan** — lihat di bawah |
+| `Mi-Thorium` (organisasi) | `a16_qpr2`, `a17` | **rujukan penting** — migrasi HIDL→AIDL, lihat di bawah |
 
-### Mi-Thorium: diperiksa, tidak ada yang bisa diambil
+### Mi-Thorium: rujukan penting untuk migrasi HIDL ke AIDL
 
-Dicatat agar tidak diperiksa ulang di kemudian hari.
+**Koreksi.** Versi awal dokumen ini menolak organisasi ini sebagai tidak relevan.
+Penilaian itu salah, dan salahnya dua lapis: pertama menilai relevansi hanya dari
+versi kernel, lalu hanya membaca `default_branch` tiap repo alih-alih seluruh
+daftar branch. Mereka justru sudah menggarap versi Android yang kita tuju.
 
-Organisasi ini menggarap keluarga **msm8937/8917/8940/SDM439** Xiaomi
-("mithorium", plus MSM8953 & SDM632) — bukan msm8916. Tiga alasan ia tidak
-menolong A37:
+```
+a16/master   a16_qpr1/master   a16_qpr2/master   a17/master
+```
 
-- **Kernel mereka jauh lebih baru.** Yang tertua `kernel_msm-3.18`; kita 3.10.
-  Tidak ada backport yang bisa dipetik untuk celah 3.10 kita.
-- **Tidak menggarap LineageOS 23.** Branch mereka `a11/master`, `a13/master`,
-  `a14/master` — Android 11 sampai 14. Nol branch `lineage-22` atau `lineage-23`
-  di repo yang diperiksa.
-- **Platform mereka justru masih didukung hulu.** `msm8937` adalah anggota
-  UM 3.18 family dan tetap ada di `qcom_boards.mk:5` LineageOS 23.2. Mereka tidak
-  pernah menghadapi masalah pre-UM yang menghalangi kita.
+`a16_qpr2` adalah Android 16 QPR2 — persis target LineageOS 23.2.
 
-Pencarian kode menemukan 123 kecocokan `msm8916` di organisasi ini, tapi semuanya
-insidental — artefak hulu CAF/mainline yang memang ada di pohon kernel QCOM mana
-pun: `arch/arm64/boot/dts/qcom/msm8916.dtsi`, `drivers/clk/qcom/apcs-msm8916.c`,
-binding pinctrl dan wcd. Bukan dukungan perangkat msm8916.
+Platform mereka msm8937/8917/8940/SDM439 dengan kernel 4.9/4.19. Berbeda dari
+A37, tapi sama-sama perangkat lawas, dan **mereka sudah melewati penghapusan HIDL
+yang sekarang menghadang kita**.
 
-`Mi-Thorium/lk2nd` juga fork dari `msm8953-mainline/lk2nd`, bukan jalur msm8916.
+#### 1. HIDL tidak dihapus seluruhnya di Android 16
 
-Nilainya justru sebagai penanda batas: msm8937 milik mereka adalah platform
-**tertua yang masih diterima** LineageOS 23.2, dan A37 berada tepat satu tingkat
-di bawah garis itu.
+Ini yang paling meluruskan. Di `a16_qpr2/master` mereka masih memakai **58 HAL
+HIDL**, termasuk yang mendasar:
+
+```
+android.hardware.graphics.composer@2.1-service
+android.hardware.graphics.allocator@2.0-impl
+android.hardware.graphics.mapper@2.0-impl-2.1
+android.hardware.keymaster@3.0-impl
+android.hardware.gatekeeper@1.0-impl
+android.hardware.audio@7.0-impl
+```
+
+Jadi keempat kegagalan build kita bukan gejala "HIDL mati". Yang dihapus hanya
+HAL tertentu — vibrator, livedisplay, touch. Sisanya aman, dan tidak perlu
+dimigrasi karena panik.
+
+#### 2. Migrasi livedisplay: sudah mereka kerjakan
+
+```
+a11/master   vendor.lineage.livedisplay@2.0-service-sdm      <- HIDL
+a16_qpr2     vendor.lineage.livedisplay-service.sdm          <- AIDL
+             $(call soong_config_set_bool,livedisplay_sdm,enable_dm,false)
+```
+
+Dan yang menentukan: **nol perubahan manifest/VINTF di device tree mereka**.
+Tidak ada satu pun rujukan `livedisplay` di `manifest.xml` mereka.
+
+Sebabnya terbukti di pohon kita,
+`hardware/lineage/interfaces/livedisplay/aidl/sysfs/Android.bp:30-46`:
+
+```
+init_rc: ["vendor.lineage.livedisplay-service.sysfs.rc"],
+vintf_fragments: select(soong_config_variable("livedisplay_sysfs", "enable_dcc"), {...})
+```
+
+Servis AIDL membawa init rc dan VINTF fragment-nya sendiri, dipilih per fitur
+lewat knob soong config. Itu kebalikan dari paket HIDL `-sysfs`, yang justru
+dikeluhkan `manifest.xml:356-380` A37 karena TIDAK membawa fragment sehingga tiap
+interface harus dideklarasikan manual.
+
+**Konsekuensinya alasan penundaan di 8c gugur.** Saya menunda migrasi ini karena
+takut salah deklarasi VINTF membuat servis `[restarting]` permanen. Untuk AIDL
+justru deklarasi manualnya yang harus dibuang.
+
+Untuk A37 langkahnya jadi presisi, karena manifest A37 hanya mendeklarasikan satu
+interface livedisplay, `IDisplayColorCalibration`:
+
+```
+1. device.mk : vendor.lineage.livedisplay@2.0-service-sysfs
+               -> vendor.lineage.livedisplay-service.sysfs
+2. device.mk : $(call soong_config_set_bool,livedisplay_sysfs,enable_dcc,true)
+3. manifest.xml : buang blok deklarasi VINTF livedisplay manual
+```
+
+Fragment yang akan terpakai sudah ada:
+`vendor.lineage.livedisplay-service.sysfs-dcc.xml`.
+
+#### 3. Vibrator: pakai HAL vendor, bukan implementasi AOSP
+
+```
+mithorium.mk:596   vendor.qti.hardware.vibrator.service
+```
+
+Mereka tidak pernah bergantung pada `android.hardware.vibrator@1.0-impl` milik
+AOSP, sehingga penghapusannya tidak menyentuh mereka sama sekali. Untuk A37 perlu
+diperiksa apakah `vendor/oppo/A37` punya blob setara — msm8916 lazimnya hanya
+`timed_output` sederhana, jadi belum tentu ada.
+
+#### 4. Shim RIL AIDL
+
+```
+android.hardware.radio-service.compat
+```
+
+Relevan langsung: LineageOS membuang fork `hardware/ril` di 23.2 (bagian 1), dan
+ini jalur kompatibilitas AIDL untuk RIL lawas yang layak diperiksa saat Fase 6.
+
+#### 5. Pola `.vendor` untuk blob lawas
+
+```
+android.hardware.bluetooth@1.0.vendor    android.hardware.drm@1.4.vendor
+android.hardware.radio@1.4.vendor        android.hardware.gnss@2.1.vendor
+android.hardware.keymaster@3.0.vendor    android.hardware.power@1.2.vendor
+```
+
+Varian `.vendor` dari HAL HIDL, dipasang berdampingan supaya blob lawas tetap
+menemukan pustaka yang dicarinya.
+
+#### 6. Arsitektur manifest yang berbeda dari kita
+
+`local_manifests/lineage-23.2.xml` mereka punya **nol `remove-project`**. Mereka
+tidak mengganti satu pun repo inti LineageOS. Sebagai gantinya seluruh penanganan
+legacy diisolasi di namespace sendiri, `hardware/mithorium/*`, dengan berkas
+penjaga lewat `linkfile`:
+
+```
+<linkfile src="guard-generic.bp"  dest="hardware/mithorium/audio/<CAF-tag>/Android.bp" />
+<linkfile src="guard-qcom-qssi-display.mk" dest="hardware/mithorium/display/<CAF-tag>/Android.mk" />
+```
+
+Pohon HAL CAF di-pin per tag rilis (`LA.UM.9.6.4.r2-04300-89xx.QSSI13r2.0`),
+bukan per branch LineageOS.
+
+Pendekatan ini lebih bersih, tapi **belum tentu bisa kita tiru**: mereka tidak
+perlu menambal `bionic`, `system/core`, atau `frameworks/native` karena msm8937
+masih didukung hulu. A37 pre-UM memerlukan fork ULH, dan itu memaksa
+`remove-project`.
+
+#### 7. Android 16 tidak menuntut perubahan kernel — bukti kedua
+
+Repo kernel mereka **tidak punya branch a16 maupun a17**; yang tertinggi
+`mithorium/a15/master`. Artinya device tree Android 16 dan 17 mereka berjalan di
+atas kernel a15 tanpa perubahan.
+
+Ini menguatkan temuan Fase 2 dari arah lain: kernel A37 terbangun untuk Android 16
+tanpa satu pun backport. Dua proyek berbeda, dua kernel berbeda, kesimpulan sama.
 
 ### Temuan yang menghalangi build: msm8916 dihapus dari lapisan QCOM
 

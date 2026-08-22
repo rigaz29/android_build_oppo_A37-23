@@ -60,6 +60,7 @@ Rinciannya, lengkap dengan kutipan kode dan nomor baris, ada di `PLAN-LOS23.md`.
 - [acroreiser](https://github.com/acroreiser) — a6010 (msm8916, kernel 3.10) sudah sampai `lineage-23.2`
 - [MisterZtr](https://github.com/MisterZtr) — `LineageOS_gsi`, patch GSI `lineage-23.2`
 - [zhafknight](https://github.com/zhafknight) — `los_patches`, 89 patch LOS 23.2 untuk N7000 (kernel 3.0); bukti bahwa BPF-less berjalan
+- [Mi-Thorium](https://github.com/Mi-Thorium) — msm8937/SDM439 di branch `a16_qpr2` dan `a17`; rujukan migrasi HIDL→AIDL dan bukti kedua bahwa Android 16 tidak menuntut perubahan kernel
 - [LineageOS-UL](https://github.com/LineageOS-UL) — pendahulu ULH, berhenti di `lineage-21.0`
 
 ## Menyiapkan ulang `src/`
