@@ -22,9 +22,15 @@ Gerbang 64-bit di `:1647` **tidak** menyala: kernel A37 dibangun arm64
 personality dulu sebelum membaca `uname()` sehingga tetap melihat `aarch64`.
 Perbaikannya karena itu cuma satu baris defconfig, bukan pekerjaan kernel.
 
-**2. Biaya eBPF sepuluh kali lipat dugaan awal.**
-Bukan 98 commit melainkan ~1.300, karena cgroup v2 harus di-backport lebih dulu —
-dan itu tidak terlihat di selisih `22.2..23.2` karena sudah masuk sebelumnya.
+**2. eBPF dan cgroup v2 TIDAK wajib di-backport.**
+Ada rantai patch userspace yang sudah jadi dan terbukti: `zhafknight/los_patches`
+menjalankan LineageOS 23.2 di Galaxy Note N7000 — kernel 3.0, jauh lebih tua dari
+A37 — dengan **cgroup v1** dan **BPF-less networking**. Patch kuncinya mengubah
+gerbang fatal `NetBpfLoad` menjadi peringatan.
+
+Perbandingannya: **89 patch userspace** lawan **~1.300 commit kernel** (backport
+cgroup v2 + eBPF ala acroreiser). Jalur userspace yang dipilih; backport kernel
+turun status menjadi opsional.
 
 **3. SkiaGL sudah pernah dicoba di A37 dan menjatuhkan SurfaceFlinger.**
 Android 16 membuang mesin GLES lama, jadi `debug.renderengine.backend=gles` yang
@@ -45,7 +51,8 @@ Rinciannya, lengkap dengan kutipan kode dan nomor baris, ada di `PLAN-LOS23.md`.
 - [LineageOS](https://github.com/LineageOS) — manifest dan sumber 23.2
 - [Ultra-Legacy-Hippeastrum](https://github.com/Ultra-Legacy-Hippeastrum) — fork `lineage-23.2` untuk perangkat legacy
 - [acroreiser](https://github.com/acroreiser) — a6010 (msm8916, kernel 3.10) sudah sampai `lineage-23.2`
-- [MisterZtr](https://github.com/MisterZtr) — patch GSI
+- [MisterZtr](https://github.com/MisterZtr) — `LineageOS_gsi`, patch GSI `lineage-23.2`
+- [zhafknight](https://github.com/zhafknight) — `los_patches`, 89 patch LOS 23.2 untuk N7000 (kernel 3.0); bukti bahwa BPF-less berjalan
 - [LineageOS-UL](https://github.com/LineageOS-UL) — pendahulu ULH, berhenti di `lineage-21.0`
 
 ## Menyiapkan ulang `src/`

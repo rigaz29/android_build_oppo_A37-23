@@ -208,11 +208,13 @@ CONFIG_ANDROID_TREBLE_SPOOF_BPF_KERNEL_BITNESS=y
 
 ---
 
-## 5. Rencana kernel — WAJIB
+## 5. Rencana kernel
 
-Urut, karena saling bergantung.
+Setelah K2b terjawab, isi bagian ini menyusut drastis. Yang **wajib** hanya K3,
+K4, dan K5 — semuanya kecil dan mandiri. K1, K2, dan K2a dipertahankan sebagai
+catatan jalur alternatif, bukan pekerjaan yang direncanakan.
 
-### K1. Lewati gerbang versi NetBpfLoad — satu baris
+### K1 (OPSIONAL). Lewati gerbang versi NetBpfLoad — satu baris
 
 Jauh lebih murah dari dugaan semula. Mekanisme spoofing **sudah aktif** di
 `arch/arm64/configs/lineageos_a37f_defconfig`; yang salah hanya nilainya:
@@ -237,7 +239,7 @@ sekaligus, jadi ubah terpisah dan ukur akibatnya, jangan disatukan dengan yang B
 Perlu diingat: spoof hanya membuat NetBpfLoad *mau jalan*. Ia lalu akan benar-benar
 memuat program BPF — dan di situlah K2 dibutuhkan.
 
-### K2. Backport tumpukan eBPF (98 commit)
+### K2 (OPSIONAL). Backport tumpukan eBPF (98 commit)
 
 Urutan wajib, karena berlapis:
 
@@ -255,7 +257,7 @@ Urutan wajib, karena berlapis:
 7. **Perbaikan keamanan** susulan — truncation mod32/div, ringbuf power-of-2,
    dead code sanitizing, dsb.
 
-### K2a. Prasyarat yang tidak terlihat: cgroup v2
+### K2a (OPSIONAL). Prasyarat yang tidak terlihat: cgroup v2
 
 **Angka 98 commit di atas menyesatkan kalau berdiri sendiri.** Pertanyaan
 Fase 0 sudah dijawab, dan jawabannya memperbesar cakupan secara drastis.
@@ -293,38 +295,71 @@ CONFIG_CGROUP_BPF=y   CONFIG_BPF=y   CONFIG_BPF_SYSCALL=y
 CONFIG_BPF_JIT=y      CONFIG_BPF_EVENTS=y
 ```
 
-### K2b. Kenapa tidak bisa sekadar dibiarkan gagal
+### K2b. TERJAWAB: eBPF tidak wajib
 
-Di 22.2 kita mematikan eBPF dan menambal `NetdUpdatable.cpp`. Di 23.2 itu lebih
-berbahaya, karena `src/conn-23.2/bpf/loader/netbpfload.rc:15`:
+Pertanyaan ini sempat saya gantung sebagai percabangan berisiko. Ternyata sudah
+ada jawabannya, dan jawabannya **tidak wajib** — dengan preseden yang jauh lebih
+ekstrem dari A37.
+
+`zhafknight/los_patches/los-23.2_n7000/` adalah set patch LineageOS 23.2 untuk
+**Samsung Galaxy Note GT-N7000 / Exynos 4210** — perangkat 2011 dengan kernel 3.0,
+jauh lebih tua dari A37. README-nya menyebut kemampuan yang disediakan, dua di
+antaranya persis kebutuhan kita:
 
 ```
-service bpfloader /system/bin/false
-    reboot_on_failure reboot,netbpfload-missing
+- legacy-kernel, cgroup v1, and process-group compatibility
+- BPF-less networking, netd, and DNS resolver compatibility
 ```
 
-Kegagalan `netbpfload` memicu **reboot**, bukan sekadar servis mati — artinya
-bootloop. Konsumennya juga masih memeriksa hasilnya (`bpf/netd/BpfHandler.cpp:234`
-menuntut `bpf.progs_loaded == "1"`).
+**cgroup v1**, bukan v2. **BPF-less**, bukan eBPF.
 
-Konsekuensinya, spoofing K1 saja **tidak cukup dan bahkan berbahaya**: ia membuat
-NetBpfLoad lolos gerbang versi, lalu benar-benar mencoba memuat program BPF, gagal,
-dan mereboot. K1 hanya aman kalau diikuti K2 — atau kalau Connectivity ditambal
-seperti di 22.2 sekaligus `reboot_on_failure` dilucuti.
+Kuncinya patch `NetBpfLoad-Relax-all-kernel-version-and-capability-checks`
+(ada di dua tempat: `zk-patches/.../043-gsi-staging-0001-...` dan
+`MisterZtr/LineageOS_gsi` `patches/trebledroid-staging/`). Ia mengubah setiap
+gerbang fatal menjadi peringatan:
 
-Ini percabangan besar yang harus diputuskan sadar, bukan ditemukan di tengah jalan:
+```diff
+     if (isAtLeast25Q2 && !isAtLeastKernelVersion(5, 4)) {
+-        ALOGE("Android 25Q2 requires kernel 5.4.");
+-        failed = true;
++        ALOGW("[GSI] Android 25Q2 requires kernel 5.4.");
+     }
+```
+
+Rantai BPF-less selengkapnya, semuanya sudah tersedia sebagai patch jadi:
+
+| Repo | Patch |
+|---|---|
+| Connectivity | `NetBpfLoad-Relax-all-kernel-version-and-capability-checks` |
+| Connectivity | `BpfHandler-and-BpfNetMaps-convert-fatal-errors-to-non-fatal` |
+| Connectivity | `Support-non-working-BPF-maps-on-old-BPF-less-kernel` |
+| Connectivity | `treat-non-optional-BPF-program-load-failures-as-non-fatal` |
+| Connectivity | `net-Gracefully-fallback-when-eBPF-firewall-maps-are-unavailable` |
+| Connectivity | `netd-Remove-4.14-kernel-restrictions` |
+| DnsResolver | `Dont-abort-if-the-DnsHelper-failed-to-init-on-BPF-less` |
+| frameworks/native | `Disable-gpuservice-on-old-BPF-less-kernel` |
+| system/vold | `vold-use-sdcardfs-as-fallback-when-FUSE-BPF-is-unavailable` |
+
+Karena gerbangnya dilucuti di userspace, **K1 pun tidak diperlukan**: tidak ada
+lagi yang perlu ditipu soal versi kernel. Spoofing tetap boleh dipakai, tapi
+sebagai pilihan, bukan keharusan.
+
+Perbandingan biayanya tidak berimbang:
 
 | Jalur | Biaya | Status |
 |---|---|---|
-| **A. Backport penuh** cgroup v2 + eBPF | ~1.300 commit | terbukti jalan di a6010 |
-| **B. Tambal Connectivity** + lucuti `reboot_on_failure`, tanpa spoof BPF | kecil, mirip 22.2 | **belum pernah diuji di 23.2** |
+| **B. Userspace BPF-less** | **89 patch**, sudah jadi | dipakai di perangkat kernel 3.0 |
+| A. Backport cgroup v2 + eBPF | ~1.300 commit kernel | dipakai a6010 |
 
-Jalur B lebih murah dan sejalan dengan pengalaman 22.2, tapi belum ada preseden.
-Jalur A mahal tapi sudah ada yang membuktikan. Rekomendasi: **coba B lebih dulu**
-di Fase 4 — kalau gagal, kerugiannya hanya beberapa hari, sedangkan memulai dari A
-mengunci berminggu-minggu sebelum tahu ROM-nya bisa hidup.
+**Keputusan: tempuh jalur B.** Jalur A turun status menjadi opsional — hanya
+relevan kalau nanti ada fitur yang benar-benar menuntut eBPF berfungsi (mis.
+statistik data per-aplikasi atau firewall berbasis BPF), dan itu pun sebagai
+proyek tersendiri.
 
-### K3. Syscall yang hilang
+Konsekuensi lain: rentetan `reboot_on_failure` yang saya khawatirkan tidak lagi
+jadi jebakan, karena kegagalan BPF sudah diubah menjadi non-fatal di hulu rantai.
+
+### K3 (WAJIB). Syscall yang hilang
 
 ```
 close_range()      + CLOSE_RANGE_UNSHARE + CLOSE_RANGE_CLOEXEC   (5 commit)
@@ -335,7 +370,7 @@ ARM: wire up ...  + ARM: fix syscall table derps
 
 Kecil, mandiri, konflik rendah. Bisa dikerjakan paralel dengan K2.
 
-### K4. SELinux
+### K4 (WAJIB). SELinux
 
 ```
 selinux: ignore unknown extended permissions
@@ -346,7 +381,7 @@ Revert "selinux: Android kernel compatibility with M userspace"
 Kernel A37 sudah punya extended permissions, tapi *ignore unknown* adalah hal
 berbeda — policy Android 16 membawa xperm yang kernel 3.10 belum kenal.
 
-### K5. Locking
+### K5 (WAJIB). Locking
 
 ```
 BACKPORT: locking: Introduce __cleanup() based infrastructure
@@ -358,7 +393,7 @@ Diperlukan sebagai prasyarat build oleh sebagian backport lain.
 
 ---
 
-## 6. Rencana kernel — OPSIONAL
+## 6. Penyetelan kernel — opsional, setelah ROM hidup
 
 Tidak menghalangi boot. Kerjakan hanya setelah ROM hidup.
 
@@ -513,8 +548,7 @@ Setiap fase punya syarat lulus. Jangan lanjut sebelum terpenuhi.
 | **1** | Siapkan manifest 23.2 + local manifest A37, sinkronkan pohon | `repo sync` selesai |
 | **2** | K3 (syscall) + K5 (locking). **Jangan aktifkan K1 dulu** | kernel terbangun, boot ke bootanimation |
 | **3** | Userspace: system/core cgroup, bionic, sepolicy legacy | boot sampai homescreen |
-| **4** | Jalur B: tambal Connectivity + lucuti `reboot_on_failure` | tidak bootloop, jaringan hidup tanpa BPF |
-| **4′** | Bila B gagal: K1 (satu baris defconfig) + K2 (cgroup v2 + eBPF, ~1.300 commit) | `netbpfload` tidak `return 6` |
+| **4** | Terapkan rantai patch BPF-less (9 patch, lihat K2b) | tidak bootloop, jaringan hidup tanpa BPF |
 | **5** | Uji SkiaGL hulu sekali; siapkan fork ULH RenderEngine sebagai rencana utama | tidak ada abort `SkImage` di `logcat -b crash` |
 | **6** | Device tree: RadioConfig 1.1, cpusets, hal3on1 | telepon/kamera berfungsi |
 | **7** | Opsional: mm, sched, I/O, revert | ukur sebelum/sesudah |
@@ -531,25 +565,29 @@ terbukti buntu.
 
 ## 10. Risiko utama
 
-**eBPF adalah risiko terbesar, dan biayanya sepuluh kali dugaan awal.** Bukan 98
-commit melainkan ~1.300, karena cgroup v2 harus ikut di-backport lebih dulu (K2a).
-Semuanya di atas basis yang sudah berbeda 7.098 commit sejak 2018, sehingga tiap
-pick berpotensi konflik. Kalau jalur A terpaksa ditempuh, perlakukan sebagai
-proyek tersendiri, bukan satu fase.
+**Risiko terbesar sudah hilang.** Sebelum K2b terjawab, rencana ini bertumpu pada
+kemungkinan backport ~1.300 commit kernel. Sekarang jalurnya 89 patch userspace
+yang sudah jadi dan terbukti di perangkat kernel 3.0.
 
-**Spoofing tanpa eBPF berbahaya.** K1 membuat NetBpfLoad lolos gerbang lalu gagal
-saat benar-benar memuat program, dan `reboot_on_failure` mengubahnya jadi bootloop.
-Urutan salah di sini menghasilkan kegagalan yang jauh lebih sulit didiagnosis
-daripada sekadar jaringan mati.
+Yang tersisa:
 
-**32-bit userspace.** `NetBpfLoad.cpp:1718` menyebut `isUserspace32bit()` dengan
-kernel ≥6.2; tidak mengenai kita sekarang, tapi menandakan arah upstream terus
-mempersempit dukungan 32-bit.
+**Rantai patch belum tentu berlaku apa adanya.** 89 patch itu disusun untuk
+Exynos 4210, bukan msm8916. Yang tidak relevan (Broadcom Wi-Fi, RIL v6/v8/v9,
+`mkbootimg --dt`) harus disaring, dan sebagian mungkin bentrok dengan patch A37
+yang sudah ada dari 22.2.
 
-**hardware/ril berpindah tangan.** Patch RIL 22.2 kita tidak bisa dipakai apa
-adanya.
+**Grafis.** SkiaGL terbukti menjatuhkan SurfaceFlinger di Adreno 306 (bagian 7).
+Fork ULH atau patch GLES RenderEngine dari set n7000 diperlukan; ini pekerjaan
+userspace terbesar yang tersisa.
 
----
+**hardware/ril berpindah tangan.** Fork LineageOS dihapus di 23.2. Patch RIL 22.2
+kita tidak bisa dipakai apa adanya; set n7000 punya 2 patch `hardware/ril`, ULH
+punya fork `lineage-23.2`.
+
+**Jaringan tanpa eBPF berarti fitur hilang, bukan cuma "aman".** Statistik data
+per-aplikasi, firewall berbasis BPF, dan pembatasan latar belakang bergantung
+padanya. Di 22.2 kita hidup tanpa itu dan tidak terasa mengganggu; harapkan hal
+yang sama, tapi jangan janjikan setara.
 
 ## 11. Inventaris sumber
 
@@ -564,6 +602,18 @@ conn-23.2                         Connectivity 23.2 (NetBpfLoad)
 ulh/                              bionic, system_core, system_sepolicy,
                                   hardware_ril, frameworks_native   (381 MB)
 ```
+
+Rujukan patch (di `ref/`):
+
+```
+zk-patches    zhafknight/los_patches — 89 patch LOS 23.2 untuk n7000 (kernel 3.0)
+gsi-23.2      MisterZtr/LineageOS_gsi branch lineage-23.2
+dt-a37        device tree A37 lineage-22
+```
+
+Sumber lain yang disebut README n7000 dan belum diperiksa:
+`J0SH1X/n7000_android_16_patches`, `rINanDO/galaxys2-patches`,
+`Ultra-Legacy-Hippeastrum/legacy_support_patches`.
 
 Belum diunduh: `android_device_qcom_sepolicy` (`lineage-23.2-legacy`),
 `android_hardware_qcom-caf_common`, `MisterZtr/LineageOS_gsi`, device tree A37
