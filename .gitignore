@@ -1,0 +1,4 @@
+# Klon repo publik untuk analisis — jangan ikut di-commit.
+# Cara mengambilnya kembali ada di README.md bagian "Menyiapkan ulang src/".
+src/
+ref/

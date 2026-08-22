@@ -1,0 +1,167 @@
+2359fea40cb a6000: switch back to cfq
+6049276cfc7 sisleyr: switch back to cfq
+23773baed4b a6010: switch back to cfq
+a1c7cbbb6cf BACKPORT: locking/rtmutex: Skip remove_waiter() when waiter is not enqueued
+177f89e9fb5 BACKPORT: futex/requeue: Prevent NULL pointer dereference in remove_waiter() on self-deadlock
+f06995d1184 BACKPORT: rtmutex: Use waiter::task instead of current in remove_waiter()
+4e9fb6f4070 mm: fix build breakage after "BACKPORT: locking: Introduce __cleanup() based infrastructure"
+74bea59c702 BACKPORT: locking: Introduce __cleanup() based infrastructure
+a85dc9d02af a6010, sisleyr: add defconfigs for TWRP with Adiantum FBE support
+2c0a7b7f5ea a6010,a6000,sisleyr: set localversion
+eda77ea4751 ARM: fix syscall table derps
+8e2a6ad5af2 ARM: wire up epoll_pwait2 syscall
+0b6b614aec0 epoll: add syscall epoll_pwait2
+d581344ad9c Revert "selinux: Android kernel compatibility with M userspace"
+58fa62ad511 selinux: ignore unknown extended permissions
+b61d851e953 selinux: don't use make's grouped targets feature yet
+193ef2c2fde selinux: ensure av_permissions.h is built when needed
+bdba6dd0c71 selinux: fix Makefile dependencies of flask.h
+14eb1811243 UPSTREAM: file: simplify logic in __close_range()
+2adb958b357 UPSTREAM: file: fix close_range() for unshare+cloexec
+bad0ee7bbeb UPSTREAM: close_range: unshare all fds for CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC
+7dfc9078de3 UPSTREAM: fs, close_range: add flag CLOSE_RANGE_CLOEXEC
+53e08c4f3fd ARM: wire-up close_range()
+4266910d3c7 BACKPORT: close_range: add CLOSE_RANGE_UNSHARE
+22271dfe9eb BACKPORT: open: add close_range()
+e7ff8c09600 UPSTREAM: mm,fork: introduce MADV_WIPEONFORK
+c4a6eb723ff bpf: fix bpf_attr (BPF_PROG_LOAD) ABI mismatch on BP4A
+d8a62e3f5b6 fixup! BPF_MAP_TYPE_SK_STORAGE fixups
+914e643f21f bpf: improve dead code sanitizing
+105683622f0 bpf: Enforce BPF ringbuf size to be the power of 2
+3d7cb265ae2 bpf: Prevent writable memory-mapping of read-only ringbuf pages
+694b8b9cdd5 bpf, ringbuf: Deny reserve of buffers larger than ringbuf
+fe4e0a20e87 bpf, cgroup: Fix optlen WARN_ON_ONCE toctou
+c9b35e9f25c bpf, cgroup: Fix problematic bounds check
+b4990923b59 bpf: lpm_trie: check left child of last leftmost node for NULL
+0cf5d3b2afc bpf: Fix exact match conditions in trie_get_next_key()
+dc88939c4c1 fixups
+7ef1696acaa bpf: btf: fix struct/union/fwd types with kind_flag
+cb487f6405f bpf: kernel side support for BTF Var and DataSec
+9b9e97f196c BACKPORT: bpf: add specification for BTF Var and DataSec kinds
+92c297f0839 BACKPORT: bpf: Add mmap() support for BPF_MAP_TYPE_ARRAY
+43ca5ff98d4 bpf: Add syscall lookup support for fd array and htab
+e736b690447 bpf: fix bpffs non-array map seq_show issue
+d2e76f6e862 BACKPORT: bpf: Implement BPF ring buffer and verifier support for it
+bb19e53a878 bpf: drop refcount if bpf_map_new_fd() fails in map_create()
+7f6b95c3e2a bpf: decrease usercnt if bpf_map_new_fd() fails in bpf_map_get_fd_by_id()
+d3b8ea0e931 bpf: btf: refactor btf_int_bits_seq_show()
+097d98c3ffb bpf: btf: Add BTF_KIND_FUNC and BTF_KIND_FUNC_PROTO
+9f54c2474f2 bpf: btf: Break up btf_type_is_void()
+f7cd94998f8 bpf: add ability to charge bpf maps memory dynamically
+df45b4a73e2 bpf: btf: Rename btf_key_id and btf_value_id in bpf_map_info
+04036f28d6e bpf: btf: Add struct bpf_btf_info
+9690ba23627 bpf: btf: Add pretty print support to the basic arraymap
+f3a3b0388b1 bpf: btf: Introduce BTF ID
+2409a2b3703 bpf: implement syscall command BPF_MAP_GET_NEXT_KEY for stacktrace map
+632a910de49 fixup! apply missing part of https://github.com/acroreiser/android_kernel_lenovo_a6010/commit/d7c48eac79d746176dcfd6f884b4cb763b9ebd3c
+174fdd98d8f Revert "bpf: add helper inlining infra and optimize map_array lookup"
+c8e4db1353e bpf: allow bpf_get_current_uid_gid_proto also for networking
+472aa79a28f bpf: Fix truncation handling for mod32 dst reg wrt zero
+0189f7b66d9 bpf: Fix 32 bit src register truncation on div/mod
+1bf903c31b9 bpf: fix subprog verifier bypass by div/mod by 0 exception
+4e5e07da787 bpf: btf: fix truncated last_member_type_id in btf_struct_resolve
+043791864e3 bpf/btf: Fix BTF verification of enum members in struct/union
+9fa14d6d299 bpf, btf: fix a missing check bug in btf_parse
+ae514d8c2f6 bpf: btf: Fix a missing check bug
+2aa93e597ff bpf: btf: Fix end boundary calculation for type section
+58d77dc480d bpf: btf: Ensure the member->offset is in the right order
+835798ecc3e bpf: btf: Clean up BTF_INT_BITS() in uapi btf.h
+2ddba81d3ef bpf: btf: Fix bitfield extraction for big endian
+885167daa83 bpf: btf: Ensure t->type == 0 for BTF_KIND_FWD
+e68a79afa5f bpf: btf: Check array t->size
+b9e69db9aa8 bpf: btf: avoid -Wreturn-type warning
+f5ac8508f6b bpf: btf: Avoid variable length array
+81038f97a65 bpf: btf: Remove unused bits from uapi/linux/btf.h
+0fa72eee2d8 bpf: btf: Check array->index_type
+8f89ae22236 bpf: btf: Change how section is supported in btf_header
+9a4b6948a90 bpf: btf: Add missing refcount include
+7f9f6e3f24c bpf: btf: Avoid WARN_ON when CONFIG_REFCOUNT_FULL=y
+ffc34b16834 Revert "btf: include linux/refcount.h"
+386fda41fcc bpf: Change bpf_obj_name_cpy() to better ensure map's name is init by 0
+45705cde1d8 bpf: Fix compiler warning on info.map_ids for 32bit platform
+28d7f200709 BACKPORT: bpf: btf: Clean up btf.h in uapi
+f37ef4af512 bpf: btf: Add BPF_OBJ_GET_INFO_BY_FD support to BTF fd
+acd4eb415f6 btf: include linux/refcount.h
+fc5ce183d98 Revert "bpf: add bpf_set_hash helper for tc progs"
+d210dbae560 mm: introduce kv[mz]alloc helpers
+fbe7735dea3 BACKPORT: bpf: btf: Add BPF_BTF_LOAD command
+4dbf35b7238 bpf: btf: Add pretty print capability for data with BTF type info
+953a0d128fc bpf: btf: Check members of struct/union
+d91bc2b0118 bpf: btf: Validate type reference
+45436d2aa40 bpf: Update logging functions to work with BTF
+9364128d8c0 BACKPORT: bpf: btf: Introduce BPF Type Format (BTF)
+4b01ed771d5 BACKPORT: bpf: Rename bpf_verifer_log
+5d61fd43273 BACKPORT: bpf: encapsulate verifier log state into a structure
+d9b544803fd bpf: require CAP_NET_ADMIN when using devmap
+b97742e3bc9 bpf: Set mac_len in bpf_skb_change_head
+ab44590a0c7 bpf: add bpf_set_hash helper for tc progs
+8d1491623a9 bpf: Do per-instruction state dumping in verifier when log_level > 1.
+f55c64228e4 bpf: add helper inlining infra and optimize map_array lookup
+42ea597d7f2 bpf: bpf_lock on kallsysms doesn't need to be irqsave
+ba260af1ad2 Revert "HACK: rework old linkerconfig hack to mount surfaceflinger with legacy GLES renderengine"
+13b73768375 Revert "a6010: update defconfig (scripted)"
+e60186a0959 a6010: enable reduced debug info for addr2line
+d4338a06dd8 UPSTREAM: bpf: Add gso_size to __sk_buff
+b93472a19f4 BACKPORT: bpf: Add a bpf_sock pointer to __sk_buff and a bpf_sk_fullsock helper
+8ecdaa00165 BACKPORT: bpf: Add support for reading socket family, type, protocol
+1d2e3ec7f54 BACKPORT: bpf: allow BPF programs access skb_shared_info->gso_segs field
+0b47abc5125 BACKPORT: [dm-bufio]: convert shrinkers to new count/scan API
+e8c00713b55 sched/pelt: lower pelt halflife to 16ms
+5504e123055 block: row: allow only RenderThread requests to be marked as urgent by iosched
+809afda1d19 Revert "BACKPORT: dm bufio: don't take the lock in dm_bufio_shrink_count"
+92feb96f754 Revert "mm, oom: introduce oom reaper"
+13a6cb50521 Revert "oom: make oom_reaper freezable"
+e2372c134b4 Revert "BACKPORT: mm: introduce process_mrelease system call"
+9e583682dd9 Revert "UPSTREAM: mm/oom_kill.c: prevent a race between process_mrelease and exit_mmap"
+969bf36deef Revert "BACKPORT: FROMLIST: mm/oom_kill: allow process_mrelease to run under"
+7d3c1c53640 Revert "BACKPORT: ARM: mm: wire up syscall process_mrelease"
+a554a0a8e12 a6010: update defconfig (scripted)
+960aa8140cf BACKPORT: mm: vmscan: do not swap anon pages just because free+file is low
+e2755cc60f8 mm: add stat_interval_jiffies knob
+bdb30156f07 mm: vmstat: provide pgscan_kswapd/pgscan_direct for lmkd
+827572f75c0 a6010: update defconfig (scripted)
+c1565bf1ae8 a6000: update defconfig (scripted)
+e966dc4e5fc sisleyr: update defconfig (scripted)
+e1e202cc145 a6000: update defconfig (scripted)
+49ae6fef600 sisleyr: update defconfig (scripted)
+6be89fa379e HACK: TREBLE: fs: workaround for old RIL blobs to bypass linker namespace isolation
+5910598c32b msm-poweroff: add debug option to force reboot to bootloader (fastboot)
+69b259ef84f sisleyr: update defconfig (scripted)
+8ac92418b08 tracing: block: add REQ_URGENT flag to rwbs
+ddf1a9435cd a6010: switch to row iosched
+246be6c7dce fixup: bpf: hashtab: fix hlist_nulls usage after backporting new features
+95a2605823b mmc: allow to stop READ requests to serve URGENT
+71bc00e9122 block: row: extend sys.use_fifo_ui with marking UI and RenderThread IO requests as urgent
+b617e03771c block: row: fix compilation for 3.10
+f3146daa8f1 a6010: update defconfig (scripted)
+8d6eda6411b HACK: rework old linkerconfig hack to mount surfaceflinger with legacy GLES renderengine
+411b2bcb05d a6010: report 5.4 aarch64 kernel version to netbpfload and bpfloader
+a09e35bcb31 UPSTREAM: bpf: Don't return EINVAL from {get,set}sockopt when optlen > PAGE_SIZE
+0fb46e3d606 UPSTREAM: bpf: always allocate at least 16 bytes for setsockopt hook
+1c08881a979 BACKPORT: bpf: introduce BPF_PROG_QUERY command
+3245b23b2ee bpf, lpm: fix lookup bug in map_delete_elem
+1b01d4da3c6 bpf: fix rcu lockdep warning for lpm_trie map_free callback
+45b51e3e115 bpf: fix memory leak in lpm_trie map_free callback function
+7c4754f73e2 bpf: Optimize lpm trie delete
+247824e3c99 bpf: Implement map_delete_elem for BPF_MAP_TYPE_LPM_TRIE
+00b852c17ef bpf, lpm: make longest_prefix_match() faster
+010ee79d013 bpf: fix kernel page fault in lpm map trie_get_next_key
+04bc1f00549 bpf: fix incorrect kmalloc usage in lpm_trie MAP_GET_NEXT_KEY rcu region
+97e8226bb41 bpf: implement MAP_GET_NEXT_KEY command for LPM_TRIE map
+4d537da4796 BACKPORT: bpf: Add struct bpf_tcp_sock and BPF_FUNC_tcp_sock
+cc62685733f BACKPORT: bpf: implement getsockopt and setsockopt hooks
+3a3869a701d BACKPORT: bpf: Introduce bpf sk local storage
+5e99a6a708e sched: add cond_resched_rcu() helper
+5b7d69a467e BACKPORT: bpf: add map_alloc_check callback
+dffd7867f4a hlist: Add hlist_is_singular_node() helper
+95c78f48c0c BACKPORT: bpf: Add PTR_TO_SOCKET verifier type
+b2fc9a3d890 HACK: ANDROID: bpf: fixup returned LPM_TRIE map flags for mapMatchesExpectations (NetBpfLoad)
+61c39bde152 HACK: ANDROID: bpf: NetBpfLoad wants bpf progs to be always jited
+b1413f9b1f3 HACK: ANDROID: bpf: NetBpfLoad wants 64-bit kernel
+d63c70d332e utsname: fix indentation in kernel version spoofing code
+0c01333a3d3 HACK: ANDROID: bpf: emulate support for BPF_MAP_TYPE_DEVMAP_HASH
+4a123915c98 Revert "[SQUASHED] msm8916: apply overclock to 1.6 GHz"
+e553132709d Revert "arm: dts: Lower cpr voltage step to 5000uV"
+957a2881fb5 Revert "qcom: msm8916: overclock the bus frequencies"
+0b4232d20ef Revert "sched/core: Use SCHED_RR in place of SCHED_FIFO for all users"
+f8287b98937 Revert "sched: allow most critical tasks (prio > 90) to be SCHED_FIFO"
