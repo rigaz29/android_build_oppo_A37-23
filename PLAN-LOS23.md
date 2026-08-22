@@ -378,8 +378,13 @@ Revert "selinux: Android kernel compatibility with M userspace"
 + 3 perbaikan Makefile/dependensi flask.h
 ```
 
-Kernel A37 sudah punya extended permissions, tapi *ignore unknown* adalah hal
-berbeda — policy Android 16 membawa xperm yang kernel 3.10 belum kenal.
+Kernel A37 sudah mendukung xperms sepenuhnya — `AVTAB_XPERMS_ALLOWED` di
+`security/selinux/ss/avtab.c:371`, dan `POLICYDB_VERSION_MAX` bernilai
+`POLICYDB_VERSION_XPERMS_IOCTL`. Yang dibutuhkan hanya *ignore unknown*, karena
+policy Android 16 membawa xperm yang kernel 3.10 belum kenal.
+
+Justru karena itu patch `init-cap-SELinux-policy-version-on-pre-4.9-kernels` dari
+set GSI **tidak boleh dipakai** — lihat bagian 7b.
 
 ### K5 (WAJIB). Locking
 
@@ -548,6 +553,69 @@ Dua patch: `0001-Revert-QCOM-RIP-pre-UM-families.patch` dan
 
 Tanpa ini `QCOM_HARDWARE_VARIANT` tidak pernah terisi dan pemilihan HAL QCOM
 patah. Ini bukan penyetelan, melainkan syarat agar pohon bisa dibangun untuk A37.
+
+### MisterZtr/LineageOS_gsi ditelusuri utuh
+
+Repo ini sumber hulu bagi set n7000, jadi layak diperiksa sendiri — terutama apa
+yang **tidak** diambil zhafknight, karena mereka menyaring untuk Exynos.
+
+```
+patches/trebledroid           191
+patches/trebledroid-staging    95
+patches/personal               28
+TOTAL                         314   (n7000 mengambil 54, menyisakan 258)
+```
+
+Sebagian besar sisanya memang tidak relevan — 24 patch `device_phh_treble`,
+9 `treble_app`, plus rentetan Mediatek dan Samsung. Tapi tiga hal layak diambil,
+dan **dua justru harus ditolak**.
+
+#### Layak diambil
+
+| Patch | Alasan |
+|---|---|
+| `SurfaceFlinger-Restore-mPropagateBackpressure-for-HW` | sejalan dengan patch ULH `SF: Bring back support for disabling backpressure propagation` |
+| `add-SurfaceFlinger-latch-unsignaled-and-backpressure` | penyetelan SF untuk GPU lemah |
+| `add-prefer-hardware-codecs-toggle` | langsung menyambung kerja Codec 2.0 di 22.2 |
+| `MediaProfiles-fall-back-to-defaults-when-XML-file-ca` | ketahanan bila XML profil media tidak lengkap |
+
+#### Harus DITOLAK, dan ini yang paling penting dari pemeriksaan ini
+
+**`Revert-Remove-framework-support-for-audio-HIDL-HAL-V5`** — tidak diperlukan.
+A37 memakai HIDL audio **6.0** (`manifest.xml:38-40`), dan 6.0 masih terdaftar di
+`src/av-23.2/media/libaudiohal/FactoryHal.cpp:53-58`:
+
+```cpp
+static const std::array<AudioHalVersionInfo, 4> sAudioHALVersions = {
+    AudioHalVersionInfo(Type::AIDL, 1, 0),
+    AudioHalVersionInfo(Type::HIDL, 7, 1),
+    AudioHalVersionInfo(Type::HIDL, 7, 0),
+    AudioHalVersionInfo(Type::HIDL, 6, 0),   // <- A37
+};
+```
+
+**`init-cap-SELinux-policy-version-on-pre-4.9-kernels`** — berbahaya untuk A37.
+Patch ini membatasi policydb ke versi 29 pada kernel di bawah 4.9, karena banyak
+kernel lawas tidak punya backport ioctl xperms. Kernel A37 **punya**:
+
+```
+security/selinux/ss/avtab.c:371     AVTAB_XPERMS_ALLOWED
+security/selinux/include/security.h POLICYDB_VERSION_MAX = POLICYDB_VERSION_XPERMS_IOCTL
+```
+
+Lebih buruk lagi, patch itu memutuskan lewat `uname()`, sedangkan A37 menyalakan
+`ANDROID_TREBLE_SPOOF_KERNEL_VERSION` untuk `init` — jadi ia akan membaca awalan
+palsu `"3.17"`, tetap menyimpulkan di bawah 4.9, dan membatasi policy tanpa alasan.
+
+#### Pelajaran untuk penerapan nanti
+
+Kedua penolakan di atas datang dari memeriksa kemampuan perangkat, bukan dari
+mencocokkan nama patch. Satu umpan palsu bahkan hampir lolos:
+`disable-OPPO-touch-firmware-update-to-prevent-kernel-panic` terdengar seperti
+milik kita — ternyata untuk **OPPO F11 (CPH1911, MediaTek MT6771)**, bukan msm8916.
+
+Aturan penerapan: setiap patch disaring terhadap kemampuan A37 yang sudah
+diverifikasi, bukan terhadap kemiripan nama perangkat atau vendor.
 
 ### Konsekuensi: dua set patch dipakai bersama, bukan salah satu
 
