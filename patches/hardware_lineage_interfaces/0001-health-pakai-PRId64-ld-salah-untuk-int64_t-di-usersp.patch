@@ -1,0 +1,58 @@
+From cdcce9ca0fdad32387fd155bfb1e8a57a926b458 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Sat, 22 Aug 2026 16:22:58 +0000
+Subject: [PATCH] health: pakai PRId64, %ld salah untuk int64_t di userspace
+ 32-bit
+
+  FastCharge.cpp:74: error: format specifies type 'long'
+                     but the argument has type 'int64_t'
+      dprintf(fd, "Fast charge supported modes: %ld\n", supportedFastChargeModes);
+
+Bug ini laten dan hanya muncul di perangkat 32-bit. Di userspace 64-bit int64_t
+kebetulan long sehingga %ld benar; di 32-bit ia long long. Karena itu tidak
+pernah terlihat di perangkat yang lazim dipakai sekarang.
+
+Dipakai PRId64, bukan %lld yang disarankan compiler. %lld hanya benar di 32-bit
+dan akan memicu peringatan di 64-bit; PRId64 benar untuk keduanya, jadi perbaikan
+ini tidak memindahkan masalah ke perangkat lain.
+
+<cinttypes> ditambahkan karena belum ter-include.
+
+Satu-satunya kemunculan %ld di direktori ini, jadi tidak ada saudara yang perlu
+ikut diperbaiki.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: I51f6b08985a782fa3ba7492abecd90011a36557f
+---
+ health/aidl/default/FastCharge.cpp | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/health/aidl/default/FastCharge.cpp b/health/aidl/default/FastCharge.cpp
+index 7b97f7a..5331591 100644
+--- a/health/aidl/default/FastCharge.cpp
++++ b/health/aidl/default/FastCharge.cpp
+@@ -6,6 +6,8 @@
+ 
+ #include "FastCharge.h"
+ 
++#include <cinttypes>
++
+ #include <android-base/file.h>
+ #include <android-base/logging.h>
+ #include <android-base/strings.h>
+@@ -71,7 +73,11 @@ binder_status_t FastCharge::dump(int fd, const char** args, uint32_t numArgs) {
+     FastChargeMode fastChargeMode;
+     getFastChargeMode(&fastChargeMode);
+ 
+-    dprintf(fd, "Fast charge supported modes: %ld\n", supportedFastChargeModes);
++    /* PRId64, bukan %ld: supportedFastChargeModes bertipe int64_t, dan di
++     * userspace 32-bit (A37) int64_t adalah long long sehingga %ld salah.
++     * Di 64-bit int64_t kebetulan long, jadi bug ini tidak pernah muncul
++     * pada perangkat 64-bit. PRId64 benar untuk keduanya. */
++    dprintf(fd, "Fast charge supported modes: %" PRId64 "\n", supportedFastChargeModes);
+     dprintf(fd, "Fast charge mode: %d\n", fastChargeMode);
+ 
+     return STATUS_OK;
+-- 
+2.43.0
+

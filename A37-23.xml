@@ -135,7 +135,7 @@
        ============================================================ -->
 
   <project name="rigaz29/android_hardware_qcom_audio" path="hardware/qcom-caf/msm8916/audio"
-           remote="gh" revision="lineage-22" />
+           remote="gh" revision="lineage-23" />
   <project name="rigaz29/android_hardware_qcom_display" path="hardware/qcom-caf/msm8916/display"
            remote="gh" revision="lineage-22" />
   <project name="rigaz29/android_hardware_qcom_media" path="hardware/qcom-caf/msm8916/media"
