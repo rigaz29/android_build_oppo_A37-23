@@ -34,7 +34,7 @@ kandidat pengganti, belum diperiksa isinya.
 
 ---
 
-## 2. Temuan penentu: dua gerbang fatal
+## 2. Temuan penentu: gerbang versi kernel
 
 Ini yang menentukan seluruh bentuk rencana. `NetBpfLoad` di Android 16 menolak
 kernel kita dua kali, dan keduanya `return`, bukan peringatan.
@@ -49,7 +49,8 @@ if (isAtLeast25Q2 && !isAtLeastKernelVersion(5, 4)) {
 }
 ```
 
-`NetBpfLoad.cpp:1648`
+Ada gerbang kedua tepat di bawahnya, `NetBpfLoad.cpp:1647` — tapi yang ini
+**tidak** menyala di A37, dan alasannya dijelaskan di bawah:
 
 ```cpp
 if (isKernel32Bit() && isAtLeast25Q2) {
@@ -58,10 +59,38 @@ if (isKernel32Bit() && isAtLeast25Q2) {
 }
 ```
 
-Kernel A37: **3.10.108, ARM 32-bit**. Gagal di dua-duanya.
+Kernel A37: **3.10.108**, dibangun sebagai **arm64** (`BoardConfig.mk:301`
+`TARGET_KERNEL_ARCH := arm64`), dengan userspace 32-bit (`:159` `TARGET_ARCH := arm`,
+`:161` `armeabi-v7a`). Konfigurasi khas msm8916.
 
-Bandingkan dengan syarat 25Q4 tepat di atasnya (`:1636`) yang hanya `ALOGW` —
-menunjukkan pembedaan fatal/non-fatal itu disengaja upstream, bukan kelalaian.
+Yang benar-benar menyala hanya **satu**: gerbang versi 5.4.
+
+Gerbang 64-bit di `:1647` **tidak menyala**, dan alasannya halus. Deteksinya
+`bpf/headers/include/bpf/KernelUtils.h:174`:
+
+```cpp
+cache = !!strstr(u.machine, "64");
+```
+
+Sekilas ini tampak menjatuhkan kita, karena `adb shell uname -m` di perangkat
+menjawab `armv8l` — tidak mengandung "64". Tapi shell adalah proses 32-bit yang
+berjalan di bawah personality `PER_LINUX32`. `isKernel64Bit()` justru menangani
+kasus ini secara sengaja (`KernelUtils.h:141-152`):
+
+```cpp
+int p = personality(0xffffffff);
+int q = personality((p & ~PER_MASK) | PER_LINUX);   // pindah ke personality asli
+if (q != p) return false;
+struct utsname u;
+(void)uname(&u);                                     // baru baca machine sebenarnya
+```
+
+Ia berpindah ke personality asli lebih dulu, supaya proses 32-bit tetap melihat
+machine string kernel yang sesungguhnya. Di kernel arm64 itu `aarch64` — mengandung
+"64", sehingga `isKernel64Bit()` bernilai benar dan `:1647` terlewati.
+
+Bandingkan juga dengan syarat 25Q4 di `:1636` yang hanya `ALOGW` — pembedaan
+fatal/non-fatal itu disengaja upstream, bukan kelalaian.
 
 **Konsekuensi:** pendekatan 22.2 — mematikan eBPF lewat
 `ro.kernel.ebpf.supported=false` dan menjaga `NetdUpdatable.cpp` — tidak cukup
@@ -128,8 +157,19 @@ Diperiksa langsung pada `origin/lineage-22` kernel A37:
 | SELinux extended permissions | ada |
 | `pgscan_kswapd` untuk lmkd | ada |
 
-Defconfig `arch/arm/configs/lineageos_a37f_defconfig` saat ini **tidak punya satu
-pun `CONFIG_BPF*`**, dan tidak satu pun opsi `ANDROID_TREBLE_*` diaktifkan.
+Defconfig yang **sebenarnya dipakai** adalah
+`arch/arm64/configs/lineageos_a37f_defconfig` (684 baris), bukan varian `arch/arm/`
+(613 baris) yang bernama sama — `TARGET_KERNEL_ARCH := arm64` yang menentukan.
+Berkas itu tidak punya satu pun `CONFIG_BPF*`, tapi spoofing sudah menyala:
+
+```
+CONFIG_ANDROID_TREBLE_SPOOF_KERNEL_VERSION=y
+CONFIG_ANDROID_TREBLE_BYPASS_KERNEL_VERSION_CHECKS=y
+CONFIG_ANDROID_TREBLE_SPOOF_KERNEL_VERSION_PREFIX="3.17"
+CONFIG_ANDROID_TREBLE_SPOOF_BPF_KERNEL_VERSION_PREFIX="3.17"
+```
+
+Awalan `"3.17"` itu warisan 22.2 dan terlalu rendah untuk Android 16.
 
 ### Kabar baik: kerangka spoofing sudah ada
 
@@ -141,7 +181,7 @@ A37 punya   : ANDROID_TREBLE_SPOOF_KERNEL_VERSION
               ANDROID_TREBLE_SPOOF_BPF_KERNEL_VERSION_PREFIX
               ANDROID_TREBLE_BYPASS_KERNEL_VERSION_CHECKS
 
-A37 kurang  : ANDROID_TREBLE_SPOOF_BPF_KERNEL_BITNESS      <- untuk gerbang 64-bit
+A37 kurang  : ANDROID_TREBLE_SPOOF_BPF_KERNEL_BITNESS      <- tidak diperlukan, kernel A37 arm64
               ANDROID_TREBLE_LEGACYRIL_HACK
               ANDROID_TREBLE_MOUNT_LEGACY_LINKERCONFIG
 ```
@@ -172,20 +212,27 @@ CONFIG_ANDROID_TREBLE_SPOOF_BPF_KERNEL_BITNESS=y
 
 Urut, karena saling bergantung.
 
-### K1. Lewati dua gerbang NetBpfLoad
+### K1. Lewati gerbang versi NetBpfLoad — satu baris
 
-Port `ANDROID_TREBLE_SPOOF_BPF_KERNEL_BITNESS` dari a6010 (`init/Kconfig` +
-`include/linux/utsname.h`), lalu di `lineageos_a37f_defconfig`:
+Jauh lebih murah dari dugaan semula. Mekanisme spoofing **sudah aktif** di
+`arch/arm64/configs/lineageos_a37f_defconfig`; yang salah hanya nilainya:
 
-```
-CONFIG_ANDROID_TREBLE_SPOOF_KERNEL_VERSION=y
-CONFIG_ANDROID_TREBLE_BYPASS_KERNEL_VERSION_CHECKS=y
-CONFIG_ANDROID_TREBLE_SPOOF_BPF_KERNEL_VERSION_PREFIX="5.4.295"
-CONFIG_ANDROID_TREBLE_SPOOF_BPF_KERNEL_BITNESS=y
+```diff
+-CONFIG_ANDROID_TREBLE_SPOOF_BPF_KERNEL_VERSION_PREFIX="3.17"
++CONFIG_ANDROID_TREBLE_SPOOF_BPF_KERNEL_VERSION_PREFIX="5.4.295"
 ```
 
-Perubahan paling kecil dengan dampak terbesar: tiga baris Kconfig + empat baris
-defconfig. **Kerjakan dan uji ini lebih dulu, sendirian.**
+Satu baris. Tidak ada Kconfig yang perlu di-port, tidak ada kode kernel yang
+disentuh.
+
+`ANDROID_TREBLE_SPOOF_BPF_KERNEL_BITNESS` yang dipakai a6010 **tidak diperlukan**
+di A37: kernel kita memang arm64, jadi `isKernel64Bit()` sudah bernilai benar
+tanpa rekayasa apa pun (lihat bagian 2). a6010 membutuhkannya karena kernelnya
+32-bit.
+
+Pertimbangkan juga menaikkan `SPOOF_KERNEL_VERSION_PREFIX` (yang non-BPF, kini
+`"3.17"`) — tapi itu memengaruhi `system_server`, `zygote`, `perfetto`, dan `init`
+sekaligus, jadi ubah terpisah dan ukur akibatnya, jangan disatukan dengan yang BPF.
 
 Perlu diingat: spoof hanya membuat NetBpfLoad *mau jalan*. Ia lalu akan benar-benar
 memuat program BPF — dan di situlah K2 dibutuhkan.
@@ -467,7 +514,7 @@ Setiap fase punya syarat lulus. Jangan lanjut sebelum terpenuhi.
 | **2** | K3 (syscall) + K5 (locking). **Jangan aktifkan K1 dulu** | kernel terbangun, boot ke bootanimation |
 | **3** | Userspace: system/core cgroup, bionic, sepolicy legacy | boot sampai homescreen |
 | **4** | Jalur B: tambal Connectivity + lucuti `reboot_on_failure` | tidak bootloop, jaringan hidup tanpa BPF |
-| **4′** | Bila B gagal: K1 (spoof) + K2 (cgroup v2 + eBPF, ~1.300 commit) | `netbpfload` tidak `return 6/9` |
+| **4′** | Bila B gagal: K1 (satu baris defconfig) + K2 (cgroup v2 + eBPF, ~1.300 commit) | `netbpfload` tidak `return 6` |
 | **5** | Uji SkiaGL hulu sekali; siapkan fork ULH RenderEngine sebagai rencana utama | tidak ada abort `SkImage` di `logcat -b crash` |
 | **6** | Device tree: RadioConfig 1.1, cpusets, hal3on1 | telepon/kamera berfungsi |
 | **7** | Opsional: mm, sched, I/O, revert | ukur sebelum/sesudah |

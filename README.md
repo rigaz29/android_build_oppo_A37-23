@@ -13,9 +13,14 @@ sumber, bukan perkiraan.
 
 ## Tiga temuan yang membentuk seluruh rencana
 
-**1. Android 16 menolak kernel kita dua kali, dan fatal.**
-`NetBpfLoad.cpp:1629` menuntut kernel 5.4, `:1648` menuntut kernel 64-bit.
-Keduanya `return`, bukan peringatan. Kernel A37 adalah 3.10.108 ARM 32-bit.
+**1. Android 16 menolak versi kernel kita, dan itu fatal.**
+`NetBpfLoad.cpp:1629` menuntut kernel 5.4 dan `return`, bukan sekadar
+memperingatkan. Kernel A37 adalah 3.10.108.
+
+Gerbang 64-bit di `:1647` **tidak** menyala: kernel A37 dibangun arm64
+(`BoardConfig.mk:301`) meski userspace-nya 32-bit, dan `isKernel64Bit()` berpindah
+personality dulu sebelum membaca `uname()` sehingga tetap melihat `aarch64`.
+Perbaikannya karena itu cuma satu baris defconfig, bukan pekerjaan kernel.
 
 **2. Biaya eBPF sepuluh kali lipat dugaan awal.**
 Bukan 98 commit melainkan ~1.300, karena cgroup v2 harus di-backport lebih dulu —
