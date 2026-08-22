@@ -33,18 +33,27 @@
 
   <!-- ============================================================
        Perangkat: device tree, kernel, blob
-       Ketiganya masih di branch hasil kerja 22.2. Branch lineage-23
-       dibuat setelah pohon terbukti bisa dibangun.
+       Ketiganya kini di branch lineage-23, dibuat setelah kernel terbukti
+       terbangun (boot.img jadi, arch/arm64/boot/Image).
+
+       Titik awal masing-masing:
+         device tree  lineage-22    -> 0231000 (nonaktifkan vibrator/livedisplay)
+         kernel       lineage-22    -> 265ed1cf (belum ada perubahan)
+         vendor       lineage-18.1  -> a954792  (belum ada perubahan)
+
+       Kernel dan vendor sengaja dicabangkan meski belum berubah, supaya
+       ketiganya seragam dan perubahan 23.2 tidak pernah salah masuk ke
+       branch yang masih dipakai ROM 22.2 yang stabil.
        ============================================================ -->
 
   <project name="rigaz29/rb_device_oppo_A37" path="device/oppo/A37"
-           remote="gh" revision="lineage-22" />
+           remote="gh" revision="lineage-23" />
 
   <project name="rigaz29/kernel_oppo_msm8939" path="kernel/oppo/msm8939"
-           remote="gh" revision="lineage-22" />
+           remote="gh" revision="lineage-23" />
 
   <project name="rigaz29/rb-vendor_oppo_A37" path="vendor/oppo"
-           remote="gh" revision="lineage-18.1" />
+           remote="gh" revision="lineage-23" />
 
   <!-- ============================================================
        Fork ULH untuk perangkat legacy, semuanya lineage-23.2
