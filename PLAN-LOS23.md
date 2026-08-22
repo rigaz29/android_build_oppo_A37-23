@@ -971,6 +971,58 @@ Sebutkan `-j8` eksplisit di setiap build 23.2.
 
 ---
 
+## 8d. Fase 2 SELESAI — ROM 23.2 terbangun
+
+```
+#### build completed successfully (08:31) ####
+lineage-23.2-20260822_171611-UNOFFICIAL-A37.zip   807.232.220 byte
+post-sdk-level=36   ota-type=BLOCK
+```
+
+Dua belas kegagalan, sembilan kelas berbeda. **Tidak satu pun menyentuh kernel** —
+konsisten dengan keputusan Fase 0 menempuh jalur userspace BPF-less.
+
+| # | Kegagalan | Kelas | Sumber perbaikan |
+|---|---|---|---|
+| 1 | 2 modul HAL hilang | HIDL dihapus | ditunda ke Fase 6 |
+| 2 | `display_defs.h` | header dihapus | ULH `legacy_support_patches` |
+| 3 | atribut soter | sepolicy | **kit 22.2** |
+| 4 | tipe hwservice HIDL | HIDL dihapus | konsekuensi #1 |
+| 5 | `property_get(..., false)` | compiler ketat | sendiri |
+| 6 | `SYN_TIME_SEC` | header kernel tak diekspor | sendiri |
+| 7 | typedef `acdb_init` | typedef salah, tersingkap | sendiri |
+| 8 | `%ld` untuk `int64_t` | bug hulu, hanya 32-bit | sendiri |
+| 9 | `check_elf_files` skrip | pemeriksaan baru | sendiri |
+| 10 | `sepolicy_test` | sepolicy | **kit 22.2** |
+| 11 | `check_vintf_compatible` | matriks VINTF | **kit 22.2** (pola) |
+| 12 | `zip: Bad address` | symlink diikuti | **kit 22.2** |
+
+Empat kali kit 22.2 langsung terpakai. Bukan kebetulan: kelas masalahnya sama —
+perangkat pre-UM non-Treble yang dibangun sebagai root.
+
+### Kegagalan #12 layak dicatat tersendiri
+
+Saya sempat menuduh disk penuh dan membebaskan 38 GB; build tetap gagal di titik
+sama. Justru ketidakcocokan itu yang menyingkap sebabnya — `Bad address` adalah
+`EFAULT`, bukan `ENOSPC`.
+
+Yang sesungguhnya: `RECOVERY/RAMDISK/d` symlink ke `/sys/kernel/debug`, dan zip
+mengikutinya sampai membaca debugfs mesin build. Petunjuknya ada tepat sebelum
+gagal — `zip warning: file size changed while zipping`.
+
+Pesan commit patch 22.2 bahkan mencatat syarat pemicunya: hanya terjadi bila
+`target_file` berupa direktori DAN build berjalan sebagai root.
+
+### Yang belum terbukti
+
+ROM belum pernah di-flash. Build hijau membuktikan ia **terbangun**, bukan ia
+**boot**. Syarat lulus Fase 2 menuntut boot ke bootanimation.
+
+Yang sengaja dinonaktifkan untuk sampai ke titik ini, semuanya bertanda TODO
+Fase 6: vibrator, LiveDisplay, dan tiga baris sepolicy hwservice.
+
+---
+
 ## 9. Urutan kerja
 
 Setiap fase punya syarat lulus. Jangan lanjut sebelum terpenuhi.
@@ -979,7 +1031,7 @@ Setiap fase punya syarat lulus. Jangan lanjut sebelum terpenuhi.
 |---|---|---|
 | **0** | ~~Pertanyaan terbuka~~ — keduanya sudah terjawab: cgroup v2 (K2a) dan RenderEngine (bagian 7) | selesai |
 | **1** | ~~Manifest + sync + patch QCOM~~ **SELESAI** — lihat bagian 8b | `QCOM_BOARD_PLATFORMS` memuat msm8916; `lunch` menghasilkan `TARGET_PRODUCT=lineage_A37` |
-| **2** | K3 (syscall) + K5 (locking). **Jangan aktifkan K1 dulu** | kernel terbangun, boot ke bootanimation |
+| **2** | ~~K3 + K5~~ tidak diperlukan; 12 kegagalan build diperbaiki — lihat 8d | ROM terbangun ✓ · boot **belum diuji** |
 | **3** | Userspace: system/core cgroup, bionic, sepolicy legacy | boot sampai homescreen |
 | **4** | Terapkan rantai patch BPF-less (9 patch, lihat K2b) | tidak bootloop, jaringan hidup tanpa BPF |
 | **5** | Uji SkiaGL hulu sekali; siapkan fork ULH RenderEngine sebagai rencana utama | tidak ada abort `SkImage` di `logcat -b crash` |

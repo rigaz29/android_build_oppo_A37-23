@@ -1,0 +1,59 @@
+From a6a5b7286229ddb5b6947e0d6fd3c73b4a935873 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Sun, 9 Aug 2026 09:56:11 +0000
+Subject: [PATCH] releasetools: zip -y agar symlink tidak diikuti saat mengemas
+ OTA
+
+non_ab_ota.py memanggil zip tanpa -y, sehingga zip MENGIKUTI symlink alih-alih
+menyimpannya. target_files memuat RECOVERY/RAMDISK/d -> /sys/kernel/debug
+(dibuat system/core/rootdir/Android.mk:104), jadi zip menelusuri debugfs MESIN
+BUILD dan gagal:
+
+  zip I/O error: Bad address
+  zip error: Output file write failure (write error on zip file)
+
+saat menambahkan RECOVERY/RAMDISK/d/sync/sw_sync.
+
+Terpicu hanya bila keduanya benar: target_file berupa DIREKTORI (jalur
+LineageOS, bukan zip) dan build berjalan sebagai root sehingga /sys/kernel/debug
+bisa dienumerasi. Itu sebabnya tidak semua orang kena.
+
+Menyimpan symlink apa adanya juga yang benar secara semantik: ramdisk ROM harus
+membawa symlink, bukan salinan isi debugfs host.
+
+Change-Id: I8952ccfb48548dd79fca9107fbb78cd3bf15c1c7
+---
+ tools/releasetools/non_ab_ota.py | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/tools/releasetools/non_ab_ota.py b/tools/releasetools/non_ab_ota.py
+index 2d1075eb81..bdb1646aaa 100644
+--- a/tools/releasetools/non_ab_ota.py
++++ b/tools/releasetools/non_ab_ota.py
+@@ -598,8 +598,22 @@ def GenerateNonAbOtaPackage(target_file, output_file, source_file=None):
+       OPTIONS.input_tmp = target_file
+       tmpfile = common.MakeTempFile(suffix=".zip")
+       os.unlink(tmpfile)
++      # -y WAJIB: tanpa itu zip MENGIKUTI symlink alih-alih menyimpannya.
++      # target_files memuat RECOVERY/RAMDISK/d -> /sys/kernel/debug (dibuat
++      # system/core/rootdir/Android.mk:104), sehingga zip menelusuri debugfs
++      # MESIN BUILD dan gagal:
++      #   zip I/O error: Bad address
++      #   zip error: Output file write failure (write error on zip file)
++      # saat menambahkan RECOVERY/RAMDISK/d/sync/sw_sync.
++      #
++      # Terpicu hanya bila keduanya benar: target_file berupa DIREKTORI (jalur
++      # LineageOS ini, bukan zip) dan build berjalan sebagai root sehingga
++      # /sys/kernel/debug bisa dienumerasi.
++      #
++      # Menyimpan symlink apa adanya juga yang benar secara semantik: ramdisk
++      # ROM memang harus membawa symlink, bukan salinan isi debugfs host.
+       common.RunAndCheckOutput(
+-          ["zip", tmpfile, "-r", ".", "-0"], cwd=target_file)
++          ["zip", tmpfile, "-r", ".", "-0", "-y"], cwd=target_file)
+       assert zipfile.is_zipfile(tmpfile)
+       target_file = tmpfile
+ 
+-- 
+2.43.0
+
