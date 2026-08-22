@@ -688,6 +688,100 @@ Sepolicy legacy: `Ultra-Legacy-Hippeastrum/android_device_qcom_sepolicy` branch
 
 ---
 
+## 8b. Hasil Fase 1
+
+Dikerjakan dan tuntas. Tiga hal berbeda dari yang direncanakan.
+
+### Pohon tersinkron bersih
+
+```
+repo init -u https://github.com/LineageOS/android.git -b lineage-23.2 --git-lfs
+repo sync -c -j8 --no-clone-bundle --no-tags --force-sync
+
+1172 / 1172 project     nol error     173 GB
+```
+
+Release config 23.2 adalah **`bp4a`**, bukan `bp1a` seperti 22.2.
+
+### Dua patch QCOM ternyata tidak perlu diterapkan
+
+Rencana menyebut "terapkan 2 patch QCOM pre-UM". Setelah sync, keduanya sudah ada
+— ULH menggabungkannya langsung ke fork `hardware/qcom-caf/common`, dan keduanya
+menjadi dua commit teratas:
+
+```
+7b11870 QCOM: Bring back legacy platform definitions
+624fa24 Revert "QCOM: RIP pre-UM families"
+```
+
+Jadi memilih fork ULH di manifest sudah menyelesaikannya. Patch di
+`legacy_support_patches` ditujukan bagi yang memakai `qcom-caf/common` hulu.
+
+### Syarat lulus yang saya tetapkan sendiri ternyata keliru
+
+Rencana menuntut `QCOM_HARDWARE_VARIANT` terisi `msm8916`. Diukur setelah sync,
+nilainya **kosong** — dan itu benar, bukan kegagalan.
+
+`QCOM_HARDWARE_VARIANT` hanya diset oleh `BoardConfigQcom.mk`, dan A37 **tidak
+pernah meng-include berkas itu**. Device tree menjelaskan alasannya sendiri di
+`BoardConfig.mk:23-31`: msm8916 sudah dicabut dari daftar platform hulu sejak
+lineage-20, sehingga gerbang di `hardware/qcom-caf/msm8916/media/Android.mk:5`
+
+```make
+ifeq ($(call is-board-platform-in-list, $(QCOM_BOARD_PLATFORMS)),true)
+```
+
+bernilai false dan modul media tidak pernah ikut. A37 mengatasinya dengan
+mendeklarasikan platform sendiri di `BoardConfig.mk:44`, bukan lewat lapisan
+`BoardConfigQcom.mk`.
+
+Syarat yang benar karena itu `QCOM_BOARD_PLATFORMS`, dan itu terpenuhi:
+
+```
+QCOM_BOARD_PLATFORMS  = msm8916      <- gerbang is-board-platform-in-list lolos
+TARGET_BOARD_PLATFORM = msm8916
+TARGET_KERNEL_ARCH    = arm64
+PLATFORM_VERSION      = 16
+```
+
+### Jebakan lingkungan: `grep` adalah fungsi shell
+
+`lunch` mula-mula gagal untuk **semua** product, termasuk `aosp_arm64`, dengan
+
+```
+product_config.mk:226: error: Cannot locate config makefile for
+                       product "lineage_A37-bp4a-userdebug"
+```
+
+Perhatikan seluruh combo diperlakukan sebagai nama product. Sebabnya
+`build/make/envsetup.sh:588`:
+
+```bash
+local legacy=$(echo $1 | grep "-")
+```
+
+Di lingkungan ini `grep` bukan `/usr/bin/grep` melainkan **fungsi shell** dari
+profil pengguna yang mengalihkan ke `ugrep`. `ugrep "-"` menganggap `-` sebagai
+awalan opsi dan gagal:
+
+```
+$ echo "lineage_A37-bp4a-userdebug" | grep "-"
+ugrep: no PATTERN specified
+
+$ echo "lineage_A37-bp4a-userdebug" | /usr/bin/grep "-"
+lineage_A37-bp4a-userdebug
+```
+
+`legacy` jadi kosong, lunch mengambil jalur "format baru", dan seluruh string
+masuk sebagai `product`. Tidak terlihat sebagai alias — fungsi menang atas PATH
+dan tidak muncul di `alias`.
+
+**Penanganan:** jalankan `unset -f grep` sebelum `source build/envsetup.sh` pada
+setiap sesi build. Sesudahnya `lunch lineage_A37-bp4a-userdebug` menghasilkan
+`TARGET_PRODUCT=lineage_A37` dengan benar.
+
+---
+
 ## 9. Urutan kerja
 
 Setiap fase punya syarat lulus. Jangan lanjut sebelum terpenuhi.
@@ -695,7 +789,7 @@ Setiap fase punya syarat lulus. Jangan lanjut sebelum terpenuhi.
 | Fase | Isi | Lulus bila |
 |---|---|---|
 | **0** | ~~Pertanyaan terbuka~~ — keduanya sudah terjawab: cgroup v2 (K2a) dan RenderEngine (bagian 7) | selesai |
-| **1** | Siapkan manifest 23.2 + local manifest A37, sinkronkan pohon, lalu terapkan 2 patch QCOM pre-UM | `repo sync` selesai dan `QCOM_HARDWARE_VARIANT` terisi msm8916 |
+| **1** | ~~Manifest + sync + patch QCOM~~ **SELESAI** — lihat bagian 8b | `QCOM_BOARD_PLATFORMS` memuat msm8916; `lunch` menghasilkan `TARGET_PRODUCT=lineage_A37` |
 | **2** | K3 (syscall) + K5 (locking). **Jangan aktifkan K1 dulu** | kernel terbangun, boot ke bootanimation |
 | **3** | Userspace: system/core cgroup, bionic, sepolicy legacy | boot sampai homescreen |
 | **4** | Terapkan rantai patch BPF-less (9 patch, lihat K2b) | tidak bootloop, jaringan hidup tanpa BPF |
