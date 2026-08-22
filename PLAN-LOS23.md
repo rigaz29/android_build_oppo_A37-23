@@ -525,6 +525,35 @@ Set patch n7000 menyebut tiga sumber lain. Ketiganya diperiksa:
 | `Ultra-Legacy-Hippeastrum/legacy_support_patches` | **`lineage-23.2`** | **wajib** — 38 patch, termasuk 2 khusus QCOM |
 | `J0SH1X/n7000_android_16_patches` | `lineage-23.0` | rujukan saja; berisi dump `uncommitted.diff` per repo, bukan patch terstruktur, dan bukan 23.2 |
 | `rINanDO/galaxys2-patches` | `lineage-21.0` | terlalu tua; README n7000 sendiri menyebutnya "as reference" |
+| `Mi-Thorium` (organisasi) | `a11`–`a14` | **tidak relevan** — lihat di bawah |
+
+### Mi-Thorium: diperiksa, tidak ada yang bisa diambil
+
+Dicatat agar tidak diperiksa ulang di kemudian hari.
+
+Organisasi ini menggarap keluarga **msm8937/8917/8940/SDM439** Xiaomi
+("mithorium", plus MSM8953 & SDM632) — bukan msm8916. Tiga alasan ia tidak
+menolong A37:
+
+- **Kernel mereka jauh lebih baru.** Yang tertua `kernel_msm-3.18`; kita 3.10.
+  Tidak ada backport yang bisa dipetik untuk celah 3.10 kita.
+- **Tidak menggarap LineageOS 23.** Branch mereka `a11/master`, `a13/master`,
+  `a14/master` — Android 11 sampai 14. Nol branch `lineage-22` atau `lineage-23`
+  di repo yang diperiksa.
+- **Platform mereka justru masih didukung hulu.** `msm8937` adalah anggota
+  UM 3.18 family dan tetap ada di `qcom_boards.mk:5` LineageOS 23.2. Mereka tidak
+  pernah menghadapi masalah pre-UM yang menghalangi kita.
+
+Pencarian kode menemukan 123 kecocokan `msm8916` di organisasi ini, tapi semuanya
+insidental — artefak hulu CAF/mainline yang memang ada di pohon kernel QCOM mana
+pun: `arch/arm64/boot/dts/qcom/msm8916.dtsi`, `drivers/clk/qcom/apcs-msm8916.c`,
+binding pinctrl dan wcd. Bukan dukungan perangkat msm8916.
+
+`Mi-Thorium/lk2nd` juga fork dari `msm8953-mainline/lk2nd`, bukan jalur msm8916.
+
+Nilainya justru sebagai penanda batas: msm8937 milik mereka adalah platform
+**tertua yang masih diterima** LineageOS 23.2, dan A37 berada tepat satu tingkat
+di bawah garis itu.
 
 ### Temuan yang menghalangi build: msm8916 dihapus dari lapisan QCOM
 
