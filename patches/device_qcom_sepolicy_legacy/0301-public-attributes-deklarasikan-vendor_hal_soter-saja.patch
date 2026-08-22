@@ -1,0 +1,82 @@
+From 78e1b8cbdc055494a4ec821ab588042dbfdec5f5 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Sun, 16 Aug 2026 01:38:14 +0000
+Subject: [PATCH] public/attributes: deklarasikan vendor_hal_soter saja
+
+sepolicy.mk:27 di pohon ini melakukan
+  -include device/lineage/sepolicy/qcom/sepolicy.mk
+Berkas itu milik LineageOS RESMI dan mengasumsikan device/qcom/sepolicy MODERN,
+yang mendeklarasikan atribut soter di generic/public/attributes:142-144. Pohon
+legacy tidak, sehingga kompilasi sepolicy gagal di 38%:
+
+  device/lineage/sepolicy/qcom/private/platform_app.te:1:
+    ERROR 'attribute vendor_hal_soter_client is not declared'
+
+HANYA soter yang kurang. Versi pertama patch ini juga mendeklarasikan
+vendor_hal_gnss_qti dan vendor_hal_perf_default, dan itu SALAH -- build
+berikutnya gagal dengan:
+
+  common/hal_gnss_qti.te:30: ERROR 'Duplicate declaration of type'
+
+Sebabnya: pemeriksaan awal hanya mencari pola literal `attribute vendor_hal_X;`
+di pohon ini, padahal keduanya sudah ada lewat jalur lain:
+
+  common/hal_gnss_qti.te:29      type hal_gnss_qti, domain;
+  common/hal_perf_default.te:29  type hal_perf_default, domain, mlstrustedsubject;
+
+lalu device/lineage/sepolicy/qcom/sepolicy.mk:28-29 menambahkan substitusi M4
+hal_gnss_qti=vendor_hal_gnss_qti dan hal_perf_default=vendor_hal_perf_default,
+sehingga kedua tipe itu memang sudah bernama vendor_*.
+
+soter berbeda: nol kecocokan di daftar substitusi M4 dan tidak dideklarasikan di
+mana pun, jadi dirujuk apa adanya. Deklarasi ini tidak memberi izin apa pun --
+tidak ada domain yang menyandangnya.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ public/attributes | 32 ++++++++++++++++++++++++++++++++
+ 1 file changed, 32 insertions(+)
+
+diff --git a/public/attributes b/public/attributes
+index 2031dc3..8463531 100644
+--- a/public/attributes
++++ b/public/attributes
+@@ -1,3 +1,35 @@
+ attribute vendor_hal_fm;
+ attribute vendor_hal_fm_client;
+ attribute vendor_hal_fm_server;
++
++# vendor_hal_soter dirujuk device/lineage/sepolicy/qcom, yang ditarik masuk oleh
++# sepolicy.mk:27 lewat `-include device/lineage/sepolicy/qcom/sepolicy.mk`.
++# Berkas itu milik LineageOS resmi dan mengasumsikan device/qcom/sepolicy MODERN,
++# yang mendeklarasikannya di generic/public/attributes:142-144. Pohon legacy ini
++# tidak, sehingga kompilasi sepolicy gagal:
++#
++#   device/lineage/sepolicy/qcom/private/platform_app.te:1:
++#     ERROR 'attribute vendor_hal_soter_client is not declared'
++#
++# HANYA soter. Jangan tambahkan vendor_hal_gnss_qti atau vendor_hal_perf_default
++# di sini -- keduanya SUDAH ada, lewat jalur yang berbeda dan mudah terlewat:
++#
++#   common/hal_gnss_qti.te:29     type hal_gnss_qti, domain;
++#   common/hal_perf_default.te:29 type hal_perf_default, domain, mlstrustedsubject;
++#
++# lalu device/lineage/sepolicy/qcom/sepolicy.mk:28-29 menambahkan substitusi M4
++# `hal_gnss_qti=vendor_hal_gnss_qti` dan `hal_perf_default=vendor_hal_perf_default`,
++# sehingga kedua TIPE itu memang sudah bernama vendor_*. Mendeklarasikannya lagi
++# sebagai atribut menghasilkan:
++#
++#   common/hal_gnss_qti.te:30: ERROR 'Duplicate declaration of type'
++#
++# soter berbeda: ia TIDAK ada di daftar substitusi M4 itu (nol kecocokan) dan
++# tidak dideklarasikan di mana pun, jadi dirujuk apa adanya dan benar-benar perlu.
++#
++# Deklarasi ini tidak memberi izin apa pun -- tidak ada domain yang menyandangnya,
++# jadi policy tetap kosong. A37 memang nol blob soter; atributnya tetap dibutuhkan
++# karena platform_app.te merujuknya tanpa syarat.
++attribute vendor_hal_soter;
++attribute vendor_hal_soter_client;
++attribute vendor_hal_soter_server;
+-- 
+2.43.0
+

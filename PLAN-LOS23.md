@@ -782,6 +782,67 @@ setiap sesi build. Sesudahnya `lunch lineage_A37-bp4a-userdebug` menghasilkan
 
 ---
 
+## 8c. Fase 2 sedang berjalan
+
+### Kernel terbangun — tanpa satu pun backport
+
+Milestone pertama Fase 2 tercapai:
+
+```
+m -j8 bootimage   ->  build completed successfully (11:09)
+
+boot.img                            19.888.128 byte
+kernel                              18.327.160 byte
+KERNEL_OBJ/arch/arm64/boot/Image
+```
+
+**K3 dan K5 ternyata tidak dibutuhkan untuk membangun kernel.** Rencana menandai
+keduanya WAJIB, tapi itu diturunkan dari 167 commit acroreiser yang seluruhnya
+dikerjakan demi eBPF. Karena jalur yang dipilih userspace BPF-less, kernel
+3.10.108 apa adanya kompilasi bersih dengan toolchain Android 16.
+
+`epoll_pwait2` tetap perlu ditangani, tapi itu soal runtime grafis, bukan build.
+
+### Tiga kegagalan build, tiga sumber perbaikan berbeda
+
+| Kegagalan | Sumber perbaikan | Status |
+|---|---|---|
+| 2 modul HAL hilang (vibrator, livedisplay) | migrasi HIDL→AIDL | ditunda ke Fase 6 |
+| `hardware/display_defs.h` tidak ditemukan | ULH `legacy_support_patches` | diterapkan |
+| `attribute vendor_hal_soter_client is not declared` | patch kit 22.2 kita sendiri | diterapkan |
+
+Yang kedua membuktikan keputusan Fase 0 bahwa `legacy_support_patches` wajib:
+set n7000 berbasis Exynos tidak akan pernah membawa patch display QCOM.
+
+Yang ketiga menunjukkan nilai dokumentasi kit lama. Pesan commit patch 22.2
+merekam kekeliruan yang pernah dibuat — versi pertamanya juga mendeklarasikan
+`vendor_hal_gnss_qti` dan `vendor_hal_perf_default`, dan itu salah karena memicu
+`Duplicate declaration of type`. Hanya soter yang benar-benar kurang. Tanpa
+catatan itu kesalahan yang sama besar kemungkinan terulang.
+
+Dua patch sepolicy 22.2 lainnya (`0302`, `0401`) **konflik** terhadap pohon 23.2
+dan sengaja tidak dipaksakan.
+
+### Catatan operasional: pakai `-j8`
+
+Default Soong adalah `nproc + 2`, yang di mesin ini berarti `-j14`. Dengan nilai
+itu build dibunuh SIGTERM (`exit status 143`) dua kali. Diukur saat build aktif,
+memori tinggal **602 MB dari 11.958 MB**.
+
+```
+-j14   dibunuh dua kali
+-j8    selesai, rc=0
+```
+
+Catatan jujur: `143` adalah SIGTERM, sedangkan OOM killer kernel mengirim SIGKILL
+(137) — jadi kemungkinan pengawas di atas kernel yang bereaksi terhadap tekanan
+memori, bukan kernel itu sendiri. Mekanismenya belum terbukti penuh, tapi
+hubungannya dengan `-j` konsisten.
+
+Sebutkan `-j8` eksplisit di setiap build 23.2.
+
+---
+
 ## 9. Urutan kerja
 
 Setiap fase punya syarat lulus. Jangan lanjut sebelum terpenuhi.
