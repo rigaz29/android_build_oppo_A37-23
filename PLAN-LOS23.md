@@ -979,8 +979,9 @@ lineage-23.2-20260822_171611-UNOFFICIAL-A37.zip   807.232.220 byte
 post-sdk-level=36   ota-type=BLOCK
 ```
 
-Dua belas kegagalan, sembilan kelas berbeda. **Tidak satu pun menyentuh kernel** —
-konsisten dengan keputusan Fase 0 menempuh jalur userspace BPF-less.
+Dua belas kegagalan build, sembilan kelas berbeda — semuanya userspace. Tapi
+build hijau ternyata belum berarti ROM bisa jalan: kegagalan ketiga belas muncul
+saat flash, dan itu **menyentuh kernel** (lihat 8e).
 
 | # | Kegagalan | Kelas | Sumber perbaikan |
 |---|---|---|---|
@@ -1020,6 +1021,77 @@ ROM belum pernah di-flash. Build hijau membuktikan ia **terbangun**, bukan ia
 
 Yang sengaja dinonaktifkan untuk sampai ke titik ini, semuanya bertanda TODO
 Fase 6: vibrator, LiveDisplay, dan tiga baris sepolicy hwservice.
+
+---
+
+## 8e. Kegagalan ke-13: MADV_WIPEONFORK — ROM tidak bisa boot
+
+Flash lewat TWRP gagal `signal 6`. Log recovery memberi sebabnya dalam satu baris:
+
+```
+arc4random data MADV_WIPEONFORK failed: Invalid argument
+libc: arc4random data MADV_WIPEONFORK failed: Invalid argument
+Updater process ended with signal: 6
+```
+
+Sumbernya `bionic/libc/upstream-openbsd/android/include/arc4random.h:63-65`:
+
+```c
+if (madvise(p, size, MADV_WIPEONFORK) == -1) {
+  async_safe_fatal("arc4random data MADV_WIPEONFORK failed: %m");
+}
+```
+
+`MADV_WIPEONFORK` masuk Linux **4.14**; kernel A37 **3.10** → `EINVAL` → abort.
+
+**Ini bukan masalah flashing.** `arc4random` dipakai praktis setiap proses Android
+saat inisialisasi, jadi updater hanya kebetulan proses pertama yang menabraknya.
+ROM sebelumnya tidak akan pernah boot. Kegagalan flash justru menghemat waktu —
+kalau lolos, gejalanya bootloop tanpa petunjuk sejelas ini.
+
+Petunjuk paling menentukan: `ui_print("Target: ...")`, perintah **pertama** di
+`updater-script`, tidak pernah tercetak. Jadi updater gagal sebelum menjalankan
+skrip — bukan assert perangkat yang salah.
+
+### Koreksi terhadap kesimpulan Fase 2
+
+Bagian 8c dan 8d menyatakan "K3 tidak dibutuhkan" dan "tidak satu pun kegagalan
+menyentuh kernel". **Keliru.** Sebabnya pengujian yang kurang jauh: untuk
+`close_range` dan `epoll_pwait2` saya memeriksa siapa pemanggilnya, sedangkan
+`MADV_WIPEONFORK` hanya dicatat "tidak ada di kernel" tanpa memeriksa siapa yang
+membutuhkannya. Ternyata bionic sendiri, di jalur yang dilewati semua proses.
+
+Rencana memang mencantumkannya di daftar K3 — tapi sebagai bagian rentetan
+syscall acroreiser, tanpa alasan. Sekarang alasannya jelas dan spesifik.
+
+### Perbaikan
+
+Backport kernel, bukan menambal bionic. `MADV_WIPEONFORK` memberi jaminan
+keamanan nyata (state acak anak dibersihkan setelah `fork`); menoleransi
+kegagalannya membuang jaminan itu diam-diam. Kernel juga repo milik sendiri,
+bionic tidak.
+
+Dari acroreiser `e7ff8c09600`. Tiga dari empat berkas menerap bersih;
+`kernel/fork.c` disesuaikan manual karena hunk aslinya bersandar pada
+`dup_userfaultfd` (Linux 4.3).
+
+### Penyisiran bionic: tidak ada saudara sekelasnya
+
+Seluruh `async_safe_fatal` di `libc/` disisir dan disaring yang bergantung fitur
+kernel. Empat kandidat, semuanya gugur:
+
+| Kandidat | Putusan |
+|---|---|
+| `getentropy` (`arc4random.h:41`) | **aman** — `getentropy.cpp:65-78` mundur ke `/dev/urandom`, komentarnya menyebut `ENOSYS` |
+| MTE (`libc_init_mte.cpp`, 3 fatal) | **tidak terkompilasi** — seluruh blok `#ifdef __aarch64__`, userspace A37 32-bit |
+| `faccessat2`, `pidfd_open`, `memfd_create` | mengembalikan error biasa, bukan abort |
+| `stack_chk_fail`, `assert`, `new`, `mprotect` | tidak terkait versi kernel |
+
+`MADV_WIPEONFORK` satu-satunya yang memanggil `async_safe_fatal` **tanpa jalur
+mundur**.
+
+Batasnya jujur: penyisiran ini hanya mencakup `bionic`. `system/core`, `init`,
+dan HAL vendor bisa punya jalur fatal sejenis, dan itu hanya muncul di perangkat.
 
 ---
 
