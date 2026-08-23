@@ -1,0 +1,23 @@
+From 300ec852d39f69b53bbbbe21e0ba8fc26b3efcc7 Mon Sep 17 00:00:00 2001
+From: N7000 Patch Merge <n7000-patches@local.invalid>
+Date: Mon, 27 Jul 2026 00:00:00 +0800
+Subject: [PATCH] apexd: avoid bootloader reboot on bootstrap failure
+
+Imported from lineage-diff-20260727 for the GT-N7000 LineageOS 23.2 tree.
+
+---
+diff --git a/apexd/apexd.rc b/apexd/apexd.rc
+index 0724ee17..a77e5d59 100644
+--- a/apexd/apexd.rc
++++ b/apexd/apexd.rc
+@@ -15,7 +15,7 @@ service apexd-bootstrap /system/bin/apexd --bootstrap
+     group system
+     oneshot
+     disabled
+-    reboot_on_failure reboot,bootloader,bootstrap-apexd-failed
++stdio_to_kmsg  
+     # CAP_SYS_ADMIN is required to access device-mapper and to use mount syscall
+     # apexd-bootstrap doesn't manage apexdata snapshot & restore, hence no need for other capabilities.
+     capabilities SYS_ADMIN
+-- 
+2.53.0

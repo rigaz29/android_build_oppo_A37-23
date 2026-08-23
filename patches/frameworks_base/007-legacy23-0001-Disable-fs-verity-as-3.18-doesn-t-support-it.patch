@@ -1,0 +1,62 @@
+From b03842732b69f1591948c3360a627b95a7a652f7 Mon Sep 17 00:00:00 2001
+From: UDPSendToFailed <udpsendtofailed@gmail.com>
+Date: Sat, 24 Jan 2026 17:04:19 +0100
+Subject: [PATCH 1/8] Disable fs-verity as 3.18 doesn't support it
+
+01-24 15:28:46.713  1277  1306 E AccessPersistence: Failed to verity-protect runtime-permissions
+01-24 15:28:46.713  1277  1306 E AccessPersistence: java.io.IOException: Failed to enable fs-verity on FD(400): Inappropriate ioctl for device
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at com.android.internal.security.VerityUtils.setUpFsverity(VerityUtils.java:76)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at com.android.server.security.FileIntegrity.setUpFsVerity(FileIntegrity.java:66)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at com.android.server.security.FileIntegrity.setUpFsVerity(FileIntegrity.java:50)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at com.android.server.permission.access.AccessPersistence.writeUserState(AccessPersistence.kt:65)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at com.android.server.permission.access.AccessPersistence.writePendingState(AccessPersistence.kt:151)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at com.android.server.permission.access.AccessPersistence.access$writePendingState(AccessPersistence.kt:41)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at com.android.server.permission.access.AccessPersistence$WriteHandler.handleMessage(AccessPersistence.kt:190)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at android.os.Handler.dispatchMessage(Handler.java:132)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at android.os.Looper.dispatchMessage(Looper.java:333)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at android.os.Looper.loopOnce(Looper.java:263)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at android.os.Looper.loop(Looper.java:367)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at android.os.HandlerThread.run(HandlerThread.java:139)
+01-24 15:28:46.713  1277  1306 E AccessPersistence: 	at com.android.server.ServiceThread.run(ServiceThread.java:46)
+
+Change-Id: Ib30d8a5a277588b4480155067953c8e6efd71b16
+---
+ .../com/android/internal/security/VerityUtils.java | 14 +++-----------
+ 1 file changed, 3 insertions(+), 11 deletions(-)
+
+diff --git a/core/java/com/android/internal/security/VerityUtils.java b/core/java/com/android/internal/security/VerityUtils.java
+index ac186d0a2..7a78cb612 100644
+--- a/core/java/com/android/internal/security/VerityUtils.java
++++ b/core/java/com/android/internal/security/VerityUtils.java
+@@ -56,25 +56,17 @@ public abstract class VerityUtils {
+     private static final int HASH_SIZE_BYTES = 32;
+ 
+     public static boolean isFsVeritySupported() {
+-        return Build.VERSION.DEVICE_INITIAL_SDK_INT >= Build.VERSION_CODES.R;
++        return false;
+     }
+ 
+     /** Enables fs-verity for the file without signature. */
+     public static void setUpFsverity(@NonNull String filePath) throws IOException {
+-        int errno = enableFsverityNative(filePath);
+-        if (errno != 0) {
+-            throw new IOException("Failed to enable fs-verity on " + filePath + ": "
+-                    + Os.strerror(errno));
+-        }
++        return;
+     }
+ 
+     /** Enables fs-verity for an open file without signature. */
+     public static void setUpFsverity(int fd) throws IOException {
+-        int errno = enableFsverityForFdNative(fd);
+-        if (errno != 0) {
+-            throw new IOException("Failed to enable fs-verity on FD(" + fd + "): "
+-                    + Os.strerror(errno));
+-        }
++        return;
+     }
+ 
+     /** Returns whether the file has fs-verity enabled. */
+-- 
+2.53.0
+
