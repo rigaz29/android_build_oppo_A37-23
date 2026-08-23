@@ -1,0 +1,94 @@
+From 67c1ce811aa4ccda8a0e3cf15791f9b467e5f892 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Sun, 23 Aug 2026 23:27:34 +0000
+Subject: [PATCH] A37: proses vendor memakai /dev/binder, bukan /dev/vndbinder
+
+Perangkat ini tidak memakai VNDK (ro.vndk.version kosong), jadi domain vendor
+binder tidak punya guna -- yang dihasilkannya justru membuat SETIAP HAL AIDL
+vendor mendaftar ke vndservicemanager dan tidak pernah terlihat framework.
+
+Terukur di perangkat sebelum perubahan ini:
+
+  vndservice list  ->  android.hardware.wifi.IWifi/default
+                       android.hardware.drm.IDrmFactory/clearkey
+  service check android.hardware.wifi.IWifi/default  ->  not found
+  /proc/817/fd     ->  hanya /dev/vndbinder
+  debuggerd -b 817 ->  thread "vndbinder:817_*", sehat di joinThreadPool
+
+Prosesnya hidup dan melayani, tapi di domain yang salah. Akibatnya Wi-Fi tidak
+bisa menyala, dan halaman Wi-Fi di Settings menggantung (Activity pause timeout)
+-- itulah "Settings isn't responding" yang terlihat pengguna, bukan bug Settings.
+
+build/soong/cc/compiler.go:476 mendefinisikan __ANDROID_VNDK__ untuk SETIAP
+varian vendor tanpa syarat, jadi tidak ada jalan mematikannya lewat konfigurasi.
+
+PERCOBAAN PERTAMA SALAH DAN MEMBUAT PERANGKAT TIDAK BOOT. Melepas vndbinder dari
+CONFIG_ANDROID_BINDER_DEVICES menghilangkan perangkatnya, tapi init.rc:280 tetap
+membuat symlink /dev/vndbinder tanpa memeriksa target. Symlink menggantung itu
+membuat access() gagal, sehingga ProcessState::init memundurkan vndservicemanager
+SENDIRI ke /dev/binder tempat servicemanager asli sudah berdiri:
+
+  Abort message: 'Could not become context manager'
+
+Ia abort, init menghidupkannya lagi, dan definisi servisnya membawa
+onrestart class_restart main/hal/early_hal -- seluruh kelas ikut di-restart
+berulang, boot tidak pernah selesai (413 penyebutan dalam satu logcat).
+
+Perubahan di sini jauh lebih sempit dan tidak menyentuh vndservicemanager sama
+sekali: ia menerima driver lewat argumen (cmds/servicemanager/main.cpp:153),
+jadi tetap melayani /dev/vndbinder seperti biasa. Yang berpindah hanya proses
+vendor lain, ke domain tempat framework memang mencarinya.
+---
+ libs/binder/ProcessState.cpp | 35 +++++++++++++++++++++++++++++++----
+ 1 file changed, 31 insertions(+), 4 deletions(-)
+
+diff --git a/libs/binder/ProcessState.cpp b/libs/binder/ProcessState.cpp
+index 1c7697f9e9..ffb73b4069 100644
+--- a/libs/binder/ProcessState.cpp
++++ b/libs/binder/ProcessState.cpp
+@@ -53,11 +53,38 @@
+ #define EXPECT_BINDER_OPEN_SUCCESS
+ #endif
+ 
+-#ifdef __ANDROID_VNDK__
+-const char* kDefaultDriver = "/dev/vndbinder";
+-#else
++// A37: perangkat ini tidak memakai VNDK (ro.vndk.version kosong), jadi domain
++// vendor binder tidak punya guna -- yang dihasilkannya justru membuat SETIAP
++// HAL AIDL vendor mendaftar ke vndservicemanager dan tidak pernah terlihat
++// framework. Terukur di perangkat sebelum perubahan ini:
++//
++//   vndservice list  ->  android.hardware.wifi.IWifi/default
++//                        android.hardware.drm.IDrmFactory/clearkey
++//   service check android.hardware.wifi.IWifi/default  ->  not found
++//   /proc/<pid>/fd   ->  hanya /dev/vndbinder
++//   debuggerd -b     ->  thread bernama "vndbinder:<pid>_*"
++//
++// Akibatnya Wi-Fi tidak bisa menyala dan halaman Wi-Fi di Settings menggantung
++// (Activity pause timeout), sementara prosesnya sendiri sehat.
++//
++// build/soong/cc/compiler.go:476 mendefinisikan __ANDROID_VNDK__ untuk SETIAP
++// varian vendor tanpa syarat, jadi tidak ada jalan mematikannya lewat konfigurasi.
++//
++// Percobaan sebelumnya -- melepas vndbinder dari CONFIG_ANDROID_BINDER_DEVICES --
++// SALAH dan membuat perangkat tidak bisa boot: /dev/vndbinder tinggal symlink
++// menggantung (dibuat init.rc:280 tanpa memeriksa target), sehingga jalan mundur
++// di init() bawah memundurkan vndservicemanager sendiri ke /dev/binder, ia gagal
++// menjadi context manager di sana, abort, lalu restart selamanya -- dan definisi
++// servisnya membawa 'onrestart class_restart main/hal/early_hal'.
++//
++//   Abort message: 'Could not become context manager'
++//
++// Mengubah default di sini jauh lebih sempit: vndservicemanager TIDAK
++// terpengaruh karena ia menerima driver lewat argumen
++// (cmds/servicemanager/main.cpp:153), sehingga tetap melayani /dev/vndbinder
++// seperti biasa. Yang berpindah hanya proses vendor lain, ke domain tempat
++// framework memang mencarinya.
+ const char* kDefaultDriver = "/dev/binder";
+-#endif
+ 
+ // -------------------------------------------------------------------------
+ 
+-- 
+2.43.0
+
