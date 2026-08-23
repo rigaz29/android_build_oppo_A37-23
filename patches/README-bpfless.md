@@ -56,3 +56,31 @@ dengan `git apply --check --reverse`, bukan diduga:
 Sisa set (Samsung brightness, SCO/eSCO Exynos, revert OMX software codec,
 forward-port GLES RenderEngine, RIL v6-v9) belum dievaluasi untuk A37 dan
 sebagian jelas tidak relevan.
+
+## Tambahan setelah ROM mencapai boot animation
+
+`frameworks/base/088-local-0001-services-tolerate-unavailable-Power-HAL-hint-support`
+
+Diambil belakangan, setelah terbukti jadi penghenti boot. `system_server` mati
+enam kali di `startOtherServices`, tidak pernah melewati fase 100:
+
+    Failed to create service com.android.server.power.hint.HintManagerService
+    Caused by: NullPointerException: Attempt to read from field
+      'android.hardware.power.SupportInfo$HeadroomSupportInfo
+       android.hardware.power.SupportInfo.headroom' on a null object reference
+      at HintManagerService.<init>(HintManagerService.java:337)
+
+Frasa `on a null object reference` menunjuk `mSupportInfo` sendiri yang null,
+bukan `headroom` -- artinya `mPowerHal == null` dan blok pengisiannya dilewati
+seluruhnya. A37 memang tidak punya Power HAL AIDL. Patch memberi `SupportInfo`
+kosong sebagai fallback lalu mematikan headroom CPU/GPU.
+
+Yang menyesatkan di sini: `system_server` dibunuh dengan SIGKILL
+(`Process: Sending signal. PID: 5047 SIG: 9`) oleh dirinya sendiri setelah
+fatal exception, sehingga tidak menghasilkan tombstone dan tidak muncul sama
+sekali di daftar proses yang crash. Satu-satunya yang terlihat di sana adalah
+cameraserver, yang ternyata bukan penyebab stuck.
+
+Catatan alat ukur: `dmesg.txt` di /data/bootfail hanya memuat ~3 detik terakhir
+karena ring buffer sudah berputar oleh banjir denial SELinux. Jangan memakainya
+untuk menyimpulkan apa pun tentang awal boot -- pakai logcat.txt.

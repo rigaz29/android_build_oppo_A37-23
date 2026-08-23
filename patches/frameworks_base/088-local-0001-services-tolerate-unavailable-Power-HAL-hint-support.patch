@@ -1,0 +1,44 @@
+From 2bcf39b9c538066a3a2053a13e83d62a247d6734 Mon Sep 17 00:00:00 2001
+From: N7000 Patch Merge <n7000-patches@local.invalid>
+Date: Mon, 27 Jul 2026 00:00:00 +0800
+Subject: [PATCH] services: tolerate unavailable Power HAL hint support
+
+Imported from lineage-diff-20260727 for the GT-N7000 LineageOS 23.2 tree.
+
+---
+diff --git a/services/core/java/com/android/server/power/hint/HintManagerService.java b/services/core/java/com/android/server/power/hint/HintManagerService.java
+index 9174855b6466..4a7f00a2a13c 100644
+--- a/services/core/java/com/android/server/power/hint/HintManagerService.java
++++ b/services/core/java/com/android/server/power/hint/HintManagerService.java
+@@ -331,9 +331,26 @@ public final class HintManagerService extends SystemService {
+             try {
+                 mSupportInfo = getSupportInfo();
+             } catch (RemoteException e) {
+-                throw new IllegalStateException("Could not contact PowerHAL!", e);
+-            }
+-        }
++                 Slog.w(TAG, "Could not contact Power HAL, disabling hint support", e);
++    }
++}
++
++/*
++ * Legacy devices may not provide the modern AIDL Power HAL.
++ * Keep HintManagerService alive with all optional features disabled.
++ */
++if (mSupportInfo == null) {
++    Slog.w(TAG, "Power HAL support information unavailable; using legacy fallback");
++    mSupportInfo = new SupportInfo();
++}
++
++if (mSupportInfo.headroom == null) {
++    mSupportInfo.headroom = new SupportInfo.HeadroomSupportInfo();
++}
++
++mSupportInfo.headroom.isCpuSupported = false;
++mSupportInfo.headroom.isGpuSupported = false;
++
+         if (mSupportInfo.headroom.isCpuSupported) {
+             mCpuHeadroomCache = new HeadroomCache<>(2, mSupportInfo.headroom.cpuMinIntervalMillis);
+             mUidToLastUserModeJiffies = new ArrayMap<>();
+-- 
+2.53.0
