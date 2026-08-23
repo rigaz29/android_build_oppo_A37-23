@@ -1,0 +1,61 @@
+From e818fcb3ebde1051908bb0b8923147161a41dedc Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Sun, 23 Aug 2026 07:30:22 +0000
+Subject: [PATCH] core: boot.img bergantung pada dt.img saat
+ BOARD_KERNEL_SEPARATED_DT
+
+Tanpa ini ninja bebas membangun boot.img lebih dulu, dan mkbootimg gagal:
+
+  mkbootimg: error: argument --dt: can't open 'out/target/product/A37/dt.img'
+
+Dependensinya merujuk jalur berkas langsung, bukan INSTALLED_DTIMAGE_TARGET,
+karena vendor/lineage/build/tasks/dt_image.mk disertakan SETELAH berkas ini --
+variabelnya masih kosong di sini. Aturan pembuat berkasnya boleh muncul
+belakangan; make membaca seluruh makefile dulu sebelum menyelesaikan aturan.
+
+Change-Id: If3300267602a5ca92497ae4fc0133e8d7143bc6f
+---
+ core/Makefile | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/core/Makefile b/core/Makefile
+index b8c418940c..acdaacf6a1 100644
+--- a/core/Makefile
++++ b/core/Makefile
+@@ -1332,6 +1332,15 @@ endif
+ 
+ INTERNAL_BOOTIMAGE_FILES := $(filter-out --%,$(INTERNAL_BOOTIMAGE_ARGS))
+ 
++# Perangkat Qualcomm legacy menyerahkan tabel device tree lewat mkbootimg --dt
++# (BOARD_MKBOOTIMG_ARGS). Berkasnya dibangun vendor/lineage/build/tasks/dt_image.mk,
++# yang disertakan SETELAH berkas ini, jadi INSTALLED_DTIMAGE_TARGET masih kosong di
++# sini -- jalurnya dirujuk langsung. Aturan pembuatnya boleh muncul belakangan.
++BOOTIMAGE_EXTRA_DEPS :=
++ifeq (true,$(strip $(BOARD_KERNEL_SEPARATED_DT)))
++  BOOTIMAGE_EXTRA_DEPS += $(PRODUCT_OUT)/dt.img
++endif
++
+ # kernel cmdline/base/pagesize in boot.
+ # - If using GKI, use GENERIC_KERNEL_CMDLINE. Remove kernel base and pagesize because they are
+ #   device-specific.
+@@ -1374,7 +1383,7 @@ define build_boot_board_avb_enabled
+   $(call build_boot_from_kernel_avb_enabled,$(1),$(kernel))
+ endef
+ 
+-$(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(AVBTOOL) $(INTERNAL_BOOTIMAGE_FILES) $(BOARD_AVB_BOOT_KEY_PATH)
++$(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(AVBTOOL) $(INTERNAL_BOOTIMAGE_FILES) $(BOARD_AVB_BOOT_KEY_PATH) $(BOOTIMAGE_EXTRA_DEPS)
+ 	$(call pretty,"Target boot image: $@")
+ 	$(call build_boot_board_avb_enabled,$@)
+ 
+@@ -1396,7 +1405,7 @@ define build_boot_novboot
+   $(call assert-max-image-size,$1,$(call get-bootimage-partition-size,$(1),boot))
+ endef
+ 
+-$(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES)
++$(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES) $(BOOTIMAGE_EXTRA_DEPS)
+ 	$(call pretty,"Target boot image: $@")
+ 	$(call build_boot_novboot,$@)
+ 
+-- 
+2.43.0
+

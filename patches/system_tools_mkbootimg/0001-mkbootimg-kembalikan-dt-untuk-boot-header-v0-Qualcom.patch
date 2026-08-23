@@ -1,0 +1,72 @@
+From bfcdc73a7c0797857c43d5028633f801f244b43f Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Sun, 23 Aug 2026 07:30:22 +0000
+Subject: [PATCH] mkbootimg: kembalikan --dt untuk boot header v0 (Qualcomm
+ legacy)
+
+Android 16 membuang opsi ini. Akibatnya perangkat msm8916 pre-UM tidak punya
+jalan lagi memasukkan tabel device tree ke boot.img: dt.img tetap dibangun
+dengan benar oleh dt_image.mk, tapi tidak ada yang memakainya.
+
+Mencoba memakai --dt tanpa patch ini gagal di argparse, karena --dt tinggal
+menjadi awalan dari --dtb dan --dtb_offset:
+
+  mkbootimg: error: ambiguous option: --dt could match --dtb, --dtb_offset
+
+Begitu --dt terdaftar sebagai opsi tersendiri, argparse memilih kecocokan
+persis dan ambiguitasnya hilang.
+
+Tiga bagian:
+  1. opsi --dt
+  2. dt_size ditulis di offset 40 -- bidang yang sama dengan header_version,
+     yang memang bernilai 0 pada citra legacy
+  3. isi dt ditulis setelah second stage, sesuai tata letak Qualcomm
+
+Terverifikasi di OPPO A37: dt_size 210944 dengan magic QCDT di offsetnya,
+sama persis dengan partisi recovery TWRP yang berjalan di perangkat itu.
+
+Change-Id: Ie043a52596d618efec3c7c8297ab710bcd85f1ad
+---
+ mkbootimg.py | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/mkbootimg.py b/mkbootimg.py
+index ec29581..0a1cfc7 100755
+--- a/mkbootimg.py
++++ b/mkbootimg.py
+@@ -218,8 +218,12 @@ def write_header(args):
+     args.output.write(pack('I', args.base + args.tags_offset))
+     # flash page size
+     args.output.write(pack('I', args.pagesize))
+-    # version of boot image header
+-    args.output.write(pack('I', args.header_version))
++    # version of boot image header, or -- on legacy Qualcomm images -- the
++    # size of the appended device tree table. Both live at offset 40.
++    if args.dt:
++        args.output.write(pack('I', filesize(args.dt)))
++    else:
++        args.output.write(pack('I', args.header_version))
+     # os version and patch level
+     args.output.write(pack('I', (args.os_version << 11) | args.os_patch_level))
+     # asciiz product name
+@@ -502,6 +506,9 @@ def parse_cmdline():
+     parser.add_argument('--second', type=FileType('rb'),
+                         help='path to the second bootloader')
+     parser.add_argument('--dtb', type=FileType('rb'), help='path to the dtb')
++    parser.add_argument('--dt', type=FileType('rb'),
++                        help='path to the legacy Qualcomm device tree image '
++                             '(dt.img); boot header v0 only')
+     dtbo_group = parser.add_mutually_exclusive_group()
+     dtbo_group.add_argument('--recovery_dtbo', type=FileType('rb'),
+                             help='path to the recovery DTBO')
+@@ -617,6 +624,7 @@ def write_data(args, pagesize):
+     write_padded_file(args.output, args.kernel, pagesize)
+     write_padded_file(args.output, args.ramdisk, pagesize)
+     write_padded_file(args.output, args.second, pagesize)
++    write_padded_file(args.output, args.dt, pagesize)
+ 
+     if args.header_version > 0 and args.header_version < 3:
+         write_padded_file(args.output, args.recovery_dtbo, pagesize)
+-- 
+2.43.0
+
