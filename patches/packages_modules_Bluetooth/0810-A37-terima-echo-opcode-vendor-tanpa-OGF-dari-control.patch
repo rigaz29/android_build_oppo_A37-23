@@ -1,0 +1,72 @@
+From 9c3525b1e378c1da1a7937e276a6960d0dacb1c1 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Mon, 17 Aug 2026 16:28:11 +0000
+Subject: [PATCH] A37: terima echo opcode vendor tanpa OGF dari controller QCOM
+
+Bluetooth tidak pernah bisa menyala karena proses com.android.bluetooth abort
+setiap kali dinyalakan:
+
+  system/gd/hci/hci_layer.cc:234 handle_command_response:
+    Waiting for LE_ADV_FILTER(0xfd57), got Unknown OpCode(0x0157)
+
+0xfd57 dan 0x0157 punya OCF yang identik (0x157); yang berbeda hanya OGF, 0x3f
+(vendor-specific) vs 0x0. Controller QCOM msm8916 membalas command complete untuk
+perintah vendor dengan bit OGF dikosongkan. Assertion menganggapnya perintah lain,
+memanggil log::fatal, dan mematikan seluruh proses -- BluetoothManagerService
+mencatat "requested to [Disable]. Reason is CRASH" lalu menjadwalkan restart
+AdapterService 10 detik kemudian, berulang tanpa henti.
+
+Toleransinya dibuat sesempit mungkin: hanya kalau yang ditunggu memang perintah
+vendor (OGF 0x3f), yang datang ber-OGF nol, DAN OCF-nya sama persis. Di luar itu
+assertion tetap berlaku penuh.
+
+Kode di bawah assertion ini sudah mengenal is_vendor_specific untuk quirk lain;
+assertion-nya saja yang menyala lebih dulu.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: Ia2eca36722fba16434f1b72dc50b3444dc2c3c59
+---
+ system/gd/hci/hci_layer.cc | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/system/gd/hci/hci_layer.cc b/system/gd/hci/hci_layer.cc
+index 1311815633..c3351b492b 100644
+--- a/system/gd/hci/hci_layer.cc
++++ b/system/gd/hci/hci_layer.cc
+@@ -231,6 +231,33 @@ struct HciLayer::impl {
+       common::StopWatch::DumpStopWatchLog();
+       return;
+     }
++    // A37: controller QCOM di msm8916 membalas command complete untuk perintah
++    // VENDOR-SPECIFIC dengan bit OGF dikosongkan.
++    //
++    // Terekam di perangkat:
++    //   hci_layer.cc:234 handle_command_response:
++    //     Waiting for LE_ADV_FILTER(0xfd57), got Unknown OpCode(0x0157)
++    //
++    // 0xfd57 dan 0x0157 punya OCF yang IDENTIK (0x157); yang berbeda hanya OGF
++    // (0x3f vs 0x0). Assertion di bawah menganggapnya perintah lain, memanggil
++    // log::fatal, dan mematikan seluruh proses com.android.bluetooth -- sehingga
++    // Bluetooth tidak pernah bisa menyala (BluetoothManagerService mencatat
++    // "requested to [Disable]. Reason is CRASH" lalu menjadwalkan restart).
++    //
++    // Hanya kasus sempit ini yang ditoleransi: yang ditunggu memang perintah
++    // vendor, yang datang ber-OGF nol, dan OCF-nya sama persis.
++    if (waiting_command_ != op_code) {
++      constexpr uint16_t kOcfMask = 0x03ff;
++      const uint16_t waiting_raw = static_cast<uint16_t>(waiting_command_);
++      const uint16_t received_raw = static_cast<uint16_t>(op_code);
++      if ((waiting_raw >> 10) == 0x3f && (received_raw >> 10) == 0 &&
++          (waiting_raw & kOcfMask) == (received_raw & kOcfMask)) {
++        log::warn("Controller echoed vendor opcode 0x{:04x} without OGF as 0x{:04x}; accepting",
++                  waiting_raw, received_raw);
++        op_code = waiting_command_;
++      }
++    }
++
+     log::assert_that(waiting_command_ == op_code, "Waiting for {}, got {}",
+                      OpCodeText(waiting_command_), OpCodeText(op_code));
+ 
+-- 
+2.43.0
+

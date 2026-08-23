@@ -1,0 +1,98 @@
+From 8a3c34c27e63d2cd191ddbb481d919414b620789 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Sun, 23 Aug 2026 18:35:32 +0000
+Subject: [PATCH] linkerconfig: namespace vendor mewarisi tautan APEX milik
+ system
+
+Lanjutan dari patch sebelumnya. Menambahkan /system ke search path membuat
+pustaka /system/lib bisa DITEMUKAN, tapi belum cukup: sebagian bergantung pada
+pustaka yang hanya ada di APEX. Dua kegagalan nyata di perangkat, keduanya
+berujung ke APEX i18n:
+
+  mm-qcamera-daemon:
+    CANNOT LINK EXECUTABLE: library "libicu.so" not found:
+    needed by /system/lib/libharfbuzz_ng.so
+    (libandroid.so -> libharfbuzz_ng.so -> libicu.so)
+
+  rild -- terlihat hanya pada logcat level verbose, itu sebabnya luput lama:
+    RILD: dlopen failed: library "libandroidicu.so" not found:
+    needed by /system/lib/libsqlite.so
+
+Namespace system sudah punya tautannya:
+  namespace.default.link.com_android_i18n.shared_libs =
+      libandroidicu.so:libicu.so:libicui18n.so:libicuuc.so
+
+Dengan AddRequires(ctx.GetSystemRequireLibs()), Section::Resolve membentuk
+tautan yang sama untuk namespace vendor. Alurnya diverifikasi di
+modules/section.cc:125-150 -- pustaka yang tidak ada di namespace lain dicari
+di penyedia APEX, lalu namespace APEX-nya DIBUAT otomatis beserta tautannya.
+
+CATATAN PENTING: AddProvides(ctx.GetSystemProvideLibs()) sengaja TIDAK dipakai,
+meski BuildUnrestrictedDefaultNamespace melakukannya. Section vendor juga memuat
+BuildSystemNamespace (contents/section/vendor.cc:43) yang sudah menyediakan
+pustaka yang sama, dan modules/section.cc:82-88 memanggil LOG(FATAL)
+"duplicate: X is provided by A and B". Itu akan membunuh linkerconfig dan
+membuat perangkat tidak punya ld.config sama sekali. Section unrestricted boleh
+melakukannya karena TIDAK memuat namespace system.
+
+Terverifikasi pada biner hasil build:
+  apex/com.android.runtime/bin/linkerconfig memuat string "/system/${LIB}" (5x)
+  vendordefault.o 18:28 lebih baru dari sumbernya 17:55
+
+Change-Id: If0b1c8e871acacc44ae1dfb8a1da94676cdec298
+---
+ contents/namespace/vendordefault.cc | 31 ++++++++++++++++++++++++++++-
+ 1 file changed, 30 insertions(+), 1 deletion(-)
+
+diff --git a/contents/namespace/vendordefault.cc b/contents/namespace/vendordefault.cc
+index 27a5303..8a7b656 100644
+--- a/contents/namespace/vendordefault.cc
++++ b/contents/namespace/vendordefault.cc
+@@ -36,7 +36,7 @@ Namespace BuildVendorDefaultNamespace(const Context& ctx) {
+   return BuildVendorNamespace(ctx, "default");
+ }
+ 
+-Namespace BuildVendorNamespace([[maybe_unused]] const Context& ctx,
++Namespace BuildVendorNamespace(const Context& ctx,
+                                const std::string& name) {
+   Namespace ns(name, /*is_isolated=*/true, /*is_visible=*/true);
+ 
+@@ -64,6 +64,35 @@ Namespace BuildVendorNamespace([[maybe_unused]] const Context& ctx,
+   ns.AddPermittedPath("/system/vendor");
+   ns.AddPermittedPath("/system");
+ 
++  // Search path di atas membuat pustaka /system/lib bisa DITEMUKAN, tapi itu
++  // belum cukup: sebagian di antaranya bergantung pada pustaka yang hanya ada
++  // di APEX, dan namespace vendor tidak punya tautan ke sana. Dua kegagalan
++  // nyata di perangkat, keduanya berujung pada APEX i18n:
++  //
++  //   mm-qcamera-daemon:
++  //     libandroid.so -> libharfbuzz_ng.so -> libicu.so         (tidak ketemu)
++  //   rild:
++  //     libril-qc-qmi-1.so -> libsqlite.so -> libandroidicu.so   (tidak ketemu)
++  //
++  // Namespace system sudah punya tautannya:
++  //   namespace.default.link.com_android_i18n.shared_libs =
++  //       libandroidicu.so:libicu.so:libicui18n.so:libicuuc.so
++  //
++  // Mewarisi require/provide yang sama membuat Section::Resolve membentuk
++  // tautan APEX itu untuk namespace vendor juga. Ini pola yang sudah dipakai
++  // BuildUnrestrictedDefaultNamespace dan BuildApexPlatformNamespace; keduanya
++  // memanggil pasangan fungsi yang persis sama. Keduanya ada di BaseContext
++  // sehingga nilainya tidak bergantung pada section yang sedang dibangun.
++  // HANYA AddRequires. AddProvides TIDAK boleh dipakai di sini: section vendor
++  // juga memuat BuildSystemNamespace (section/vendor.cc:43) yang sudah
++  // AddProvides(GetSystemProvideLibs()), dan Section::Resolve
++  // (modules/section.cc:82-88) memanggil LOG(FATAL) "duplicate: X is provided
++  // by A and B" bila dua namespace menyediakan pustaka yang sama. Itu akan
++  // membunuh linkerconfig dan membuat perangkat tidak punya ld.config sama
++  // sekali. BuildUnrestrictedDefaultNamespace boleh melakukannya karena section
++  // unrestricted TIDAK memuat namespace system.
++  ns.AddRequires(ctx.GetSystemRequireLibs());
++
+   ns.GetLink("rs").AddSharedLib("libRS_internal.so");
+   ns.AddRequires(base::Split(Var("LLNDK_LIBRARIES_VENDOR", ""), ":"));
+ 
+-- 
+2.43.0
+
