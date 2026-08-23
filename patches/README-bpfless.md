@@ -84,3 +84,16 @@ cameraserver, yang ternyata bukan penyebab stuck.
 Catatan alat ukur: `dmesg.txt` di /data/bootfail hanya memuat ~3 detik terakhir
 karena ring buffer sudah berputar oleh banjir denial SELinux. Jangan memakainya
 untuk menyimpulkan apa pun tentang awal boot -- pakai logcat.txt.
+
+## Dicabut
+
+`build_soong/0001-soong_ui-teruskan-SOONG_GOGC-SOONG_GOMEMLIMIT` dihapus.
+
+Patch itu menekan puncak RSS soong_build agar muat di RAM 11,9 GB, tapi ongkosnya
+berat: build penuh 8 menit menjadi 27 menit karena GC bekerja jauh lebih sering.
+Dan pengukuran menunjukkan heap yang hidup memang ~10 GB -- dengan
+SOONG_GOMEMLIMIT=6GiB pun RSS tetap memuncak di 9,4 GB, karena GOMEMLIMIT adalah
+batas lunak yang dilampaui Go daripada mati.
+
+Diganti dengan menaikkan swap ke 24 GB, yang menyelesaikan sebabnya, bukan
+gejalanya.
