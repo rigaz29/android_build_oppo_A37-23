@@ -1,0 +1,56 @@
+From 016725a58e04d71cd2496bf367efe3d676179f8c Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Sun, 23 Aug 2026 12:14:22 +0000
+Subject: [PATCH] soong_ui: teruskan SOONG_GOGC / SOONG_GOMEMLIMIT ke
+ soong_build
+
+Di mesin build ber-RAM terbatas soong_build di-OOM-kill:
+
+  Out of memory: Killed process (soong_build)
+    total-vm 28.621.572 kB   anon-rss 10.600.952 kB    (RAM mesin 11,9 GB)
+
+Penyetelan Go tidak bisa lewat environment biasa, karena rule bootstrap
+menjalankannya dengan environment kosong:
+
+  build/blueprint/bootstrap/bootstrap.go:142   env -i $env "$$BUILDER"
+
+Diteruskan di tempat yang memang sudah dipakai untuk hal serupa -- baris di
+atasnya menyuntik GODEBUG ke invocationEnv yang sama. Opt-in lewat variabel,
+jadi perilaku default tidak berubah.
+
+Catatan pemakaian: GOMEMLIMIT adalah batas lunak. Dengan SOONG_GOMEMLIMIT=6GiB
+soong_build tetap memuncak di 9,4 GB, yang berarti heap hidupnya memang sebesar
+itu, bukan sampah yang bisa dibersihkan. Yang didapat adalah GC lebih agresif
+sehingga build selesai (27:48) alih-alih dibunuh.
+
+Change-Id: Ice659ee456ec63b8a07c9e2defdb13d232e5cb63
+---
+ ui/build/soong.go | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/ui/build/soong.go b/ui/build/soong.go
+index c9b303c5b..747b21249 100644
+--- a/ui/build/soong.go
++++ b/ui/build/soong.go
+@@ -242,6 +242,18 @@ func (pb PrimaryBuilderFactory) primaryBuilderInvocation(config Config) bootstra
+ 		invocationEnv["GODEBUG"] = "asyncpreemptoff=1"
+ 	}
+ 
++	// Mesin build ber-RAM terbatas: soong_build di-OOM-kill dengan anon-rss
++	// 10,6 GB pada mesin 11,9 GB. GOGC/GOMEMLIMIT dari environment pemanggil
++	// tidak pernah sampai ke sana, karena rule bootstrap menjalankannya lewat
++	// `env -i` (build/blueprint/bootstrap/bootstrap.go:142) yang membuang
++	// seluruh environment. Diteruskan di sini kalau diminta secara eksplisit.
++	if gogc := os.Getenv("SOONG_GOGC"); gogc != "" {
++		invocationEnv["GOGC"] = gogc
++	}
++	if memLimit := os.Getenv("SOONG_GOMEMLIMIT"); memLimit != "" {
++		invocationEnv["GOMEMLIMIT"] = memLimit
++	}
++
+ 	var allArgs []string
+ 	allArgs = append(allArgs, pb.specificArgs...)
+ 
+-- 
+2.43.0
+

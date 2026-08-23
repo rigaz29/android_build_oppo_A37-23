@@ -1,0 +1,62 @@
+From b0065262110e61fd1427ff9986cd93d93fd8ad19 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Sun, 23 Aug 2026 12:14:21 +0000
+Subject: [PATCH] A37: kembalikan rename() ke syscall renameat
+
+Kernel 3.10 A37 tidak punya renameat2 -- arch/arm64/include/asm/unistd32.h:788
+mencantumkannya sebagai komentar, jadi ABI compat 32-bit yang dipakai userspace
+kita tidak punya nomor syscall itu sama sekali dan setiap panggilan berakhir
+ENOSYS.
+
+bionic hulu mengalihkan rename() lewat renameat2 (libc/bionic/rename.cpp:33),
+sehingga SETIAP rename di ROM gagal. Yang membuatnya fatal: derive_classpath
+menulis /data/system/environ/classpath.tmp lalu me-rename-nya. Rename gagal,
+classpath tidak pernah terbentuk, load_exports (init.rc:1088) tidak mengekspor
+apa pun, BOOTCLASSPATH kosong, dan zygote abort berulang:
+
+  'Check failed: !location.empty() BOOTCLASSPATH and DEX2OATBOOTCLASSPATH
+   must not be empty'   -- 60 kali dalam 300 detik
+
+Terlihat langsung di perangkat: classpath.tmp ada (4586 byte), classpath tidak.
+
+Sama dengan patch yang dipakai di LOS 22.2 untuk perangkat ini, diport ulang
+karena format SYSCALLS.TXT di Android 16 sudah membuang tipe kembalian.
+
+Terverifikasi pada objek hasil build:
+  rename.o  R_ARM_THM_JUMP24 -> renameat   (satu-satunya relokasi teks)
+  libc.so   renameat kini stub syscall 32 byte, bersebelahan dengan renameat2
+---
+ libc/SYSCALLS.TXT      | 1 +
+ libc/bionic/rename.cpp | 6 +-----
+ 2 files changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/libc/SYSCALLS.TXT b/libc/SYSCALLS.TXT
+index 226ba70a8..44933ef52 100644
+--- a/libc/SYSCALLS.TXT
++++ b/libc/SYSCALLS.TXT
+@@ -168,6 +168,7 @@ linkat(int, const char*, int, const char*, int)  all
+ mkdirat(int, const char*, mode_t)  all
+ mknodat(int, const char*, mode_t, dev_t)  all
+ readlinkat(int, const char*, char*, size_t)  all
++renameat(int, const char*, int, const char*)  all
+ renameat2(int, const char*, int, const char*, unsigned)  all
+ symlinkat(const char*, int, const char*)  all
+ unlinkat(int, const char*, int)   all
+diff --git a/libc/bionic/rename.cpp b/libc/bionic/rename.cpp
+index 89786f7a0..82955596b 100644
+--- a/libc/bionic/rename.cpp
++++ b/libc/bionic/rename.cpp
+@@ -30,9 +30,5 @@
+ #include <stdio.h>
+ 
+ int rename(const char* old_path, const char* new_path) {
+-  return renameat2(AT_FDCWD, old_path, AT_FDCWD, new_path, 0);
+-}
+-
+-int renameat(int old_dir_fd, const char* old_path, int new_dir_fd, const char* new_path) {
+-  return renameat2(old_dir_fd, old_path, new_dir_fd, new_path, 0);
++  return renameat(AT_FDCWD, old_path, AT_FDCWD, new_path);
+ }
+-- 
+2.43.0
+
