@@ -100,8 +100,16 @@ gejalanya.
 
 ## Koreksi besar: namespace linker vendor
 
-Dua patch linkerconfig yang sempat ada di kit ini SUDAH DI-REVERT, dan
-patch di direktori system_linkerconfig sekarang adalah revert-nya.
+Dua patch linkerconfig yang sempat ada di kit ini SUDAH DIBUANG, dan direktori
+`system_linkerconfig` kini KOSONG. Hasil akhirnya nol perubahan: pohon
+`system/linkerconfig` kembali persis ke keadaan hulu -- diverifikasi dengan
+`git diff 1274364 HEAD`, keluarannya kosong.
+
+Sebelumnya yang disimpan di sana justru dua patch REVERT-nya. Itu TIDAK BISA
+DIPAKAI: patch aslinya tidak pernah ada di kit, sehingga `git apply` atas kedua
+revert itu gagal pada checkout baru -- diverifikasi dengan `git apply --check`,
+keduanya GAGAL. Yang perlu diwariskan dari episode ini adalah penjelasan di
+bawah, bukan berkas patch-nya.
 
 Patch aslinya menambahkan `/system/${LIB}` ke search path namespace vendor,
 untuk menolong blob kamera menemukan pustaka platform. Itu SALAH dan merusak
