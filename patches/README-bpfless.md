@@ -97,3 +97,36 @@ batas lunak yang dilampaui Go daripada mati.
 
 Diganti dengan menaikkan swap ke 24 GB, yang menyelesaikan sebabnya, bukan
 gejalanya.
+
+## Koreksi besar: namespace linker vendor
+
+Dua patch linkerconfig yang sempat ada di kit ini SUDAH DI-REVERT, dan
+patch di direktori system_linkerconfig sekarang adalah revert-nya.
+
+Patch aslinya menambahkan `/system/${LIB}` ke search path namespace vendor,
+untuk menolong blob kamera menemukan pustaka platform. Itu SALAH dan merusak
+jauh lebih banyak daripada yang diperbaiki.
+
+`libbinder_ndk.so` ada di daftar tautan LLNDK namespace vendor ke system, jadi
+secara bawaan ia dimuat DI namespace system dan berpasangan dengan libbinder
+sistem. Search path dikonsultasikan SEBELUM tautan, sehingga penambahan itu
+membayangi tautan tersebut: libbinder_ndk sistem berpasangan dengan libbinder
+vendor, dan SEMUA HAL AIDL vendor gagal mendaftar.
+
+  service.cpp:64] Check failed: result == STATUS_OK (result=-129)
+                  Failed to register wifi HAL        (-129 = EX_TRANSACTION_FAILED)
+
+Akibatnya Wi-Fi, RIL, dan Bluetooth mati sekaligus, dan halaman Wi-Fi di
+Settings menggantung -- yang terlihat pengguna sebagai "Settings isn't
+responding".
+
+Dibuktikan langsung di perangkat dengan menyunting /linkerconfig/ld.config.txt
+(ia di tmpfs, bisa ditulis root) lalu menghidupkan ulang servisnya:
+
+  tanpa /system di search path  -> IWifi found, ISupplicant found, wlan0 muncul
+  dengan /system di search path -> IWifi not found
+  /system di urutan pertama     -> gagal total (static initializer crash)
+
+Penggantinya: pasang varian vendor pustaka yang dibutuhkan ke /vendor/lib
+(libsqlite.vendor, libstdc++_vendor + symlink). Itu cara acroreiser/ULH a6010
+menyelesaikannya, dan tidak menyentuh linker sama sekali.
