@@ -1,0 +1,75 @@
+From be4dbf87775e4d24f71726538bc1d82592668666 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Tue, 18 Aug 2026 10:37:39 +0000
+Subject: [PATCH] A37: berhenti mencoba parse tcp_info yang terlalu pendek
+
+Field SEGS_IN baru ditambahkan ke struct tcp_info di kernel 4.2. Kernel 3.10
+perangkat ini menyerahkan 108 byte tanpa field itu, sehingga TcpInfo.parse TIDAK
+AKAN PERNAH berhasil -- kegagalannya permanen, bukan sesekali.
+
+Setiap percobaan membangun IllegalArgumentException, menelusuri stack,
+memformatnya, lalu mencatatnya lewat Log.e. Terukur di perangkat: 11 kali per
+detik terus-menerus, ~2600 baris terakumulasi dalam belasan menit.
+
+Panjang yang terbukti terlalu pendek kini diingat, dan percobaan berikutnya
+dengan panjang sama langsung mengembalikan null tanpa membangun exception.
+Disimpan sebagai nilai, bukan boolean, supaya kernel yang suatu saat menyerahkan
+struktur lebih panjang tetap dicoba.
+
+Pesannya tetap dicatat sekali lengkap dengan panjang yang diterima, jadi nilai
+diagnostiknya tidak hilang.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: I663d549afc1596c0d0330151dc908655842ee584
+---
+ .../android/networkstack/netlink/TcpInfo.java | 27 ++++++++++++++++++-
+ 1 file changed, 26 insertions(+), 1 deletion(-)
+
+diff --git a/src/com/android/networkstack/netlink/TcpInfo.java b/src/com/android/networkstack/netlink/TcpInfo.java
+index de450e91..6488ebb0 100644
+--- a/src/com/android/networkstack/netlink/TcpInfo.java
++++ b/src/com/android/networkstack/netlink/TcpInfo.java
+@@ -158,14 +158,39 @@ public class TcpInfo {
+         mTotalRetrans = totalRetrans;
+     }
+ 
++    /**
++     * A37: panjang tcp_info yang sudah diketahui TERLALU PENDEK di kernel ini.
++     *
++     * Field SEGS_IN baru ditambahkan ke struct tcp_info di kernel 4.2. Kernel 3.10
++     * perangkat ini menyerahkan 108 byte tanpa field itu, sehingga parsing TIDAK
++     * AKAN PERNAH berhasil -- bukan kegagalan sesekali, melainkan permanen.
++     *
++     * Tanpa penjaga ini setiap percobaan membangun IllegalArgumentException,
++     * menelusuri stack, memformatnya, lalu mencatatnya. Terukur di perangkat:
++     * 11 kali per detik terus-menerus, ~2600 baris terakumulasi.
++     *
++     * Nilai disimpan (bukan sekadar boolean) supaya kalau suatu saat kernel
++     * menyerahkan struktur yang lebih panjang, parsing tetap dicoba.
++     */
++    private static volatile int sKnownTooShortLen = -1;
++
+     /** Parse a TcpInfo from a giving ByteBuffer with a specific length. */
+     @Nullable
+     public static TcpInfo parse(@NonNull ByteBuffer bytes, int infolen) {
++        // A37: sudah terbukti terlalu pendek sebelumnya -- jangan bangun exception lagi.
++        final int knownTooShort = sKnownTooShortLen;
++        if (knownTooShort >= 0 && infolen <= knownTooShort) return null;
++
+         try {
+             return new TcpInfo(bytes, infolen);
+         } catch (BufferUnderflowException | BufferOverflowException | IllegalArgumentException
+                 | IndexOutOfBoundsException e) {
+-            Log.e(TAG, "parsing error.", e);
++            if (knownTooShort < 0) {
++                sKnownTooShortLen = infolen;
++                Log.e(TAG, "parsing error; tcp_info dari kernel ini hanya " + infolen
++                        + " byte. Percobaan berikutnya dengan panjang yang sama akan"
++                        + " dilewati tanpa mencatat ulang.", e);
++            }
+             return null;
+         }
+     }
+-- 
+2.43.0
+
