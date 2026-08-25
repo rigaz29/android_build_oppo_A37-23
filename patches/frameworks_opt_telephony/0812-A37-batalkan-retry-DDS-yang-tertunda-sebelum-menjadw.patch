@@ -1,0 +1,53 @@
+From c2db8aba6a3c1edf98f4cd8334ed55502ae87c9a Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Tue, 18 Aug 2026 10:23:46 +0000
+Subject: [PATCH] A37: batalkan retry DDS yang tertunda sebelum menjadwalkan
+ yang baru
+
+onDdsSwitchResponse memanggil sendMessageDelayed(EVENT_MODEM_COMMAND_RETRY)
+tanpa pernah membuang pesan yang masih tertunda -- nol removeMessages untuk
+event ini di seluruh berkas. Setiap kegagalan menambah satu pesan, sehingga
+antreannya menumpuk dan jeda efektifnya menyusut jauh di bawah
+MODEM_COMMAND_RETRY_PERIOD_MS.
+
+Terukur di perangkat setelah perbaikan rekursi sebelumnya: retry berdatangan
+tiap 0,2-0,5 detik alih-alih 5 detik, menyisakan ~22 baris RILJ per detik
+(turun dari ~7200, tapi masih terus-menerus).
+
+Di perangkat normal RADIO akhirnya tersedia sehingga tumpukan ini surut sendiri.
+Di sini kondisinya permanen -- hanya ada HIDL radio 1.0/1.1 sementara Android 15
+memecah radio HAL menjadi sub-servis AIDL -- jadi tidak pernah surut.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: Idd2d65059ae1fd35947082ab11ce9ab7002d8300
+---
+ .../internal/telephony/data/PhoneSwitcher.java      | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/src/java/com/android/internal/telephony/data/PhoneSwitcher.java b/src/java/com/android/internal/telephony/data/PhoneSwitcher.java
+index f137892b18..d553338967 100644
+--- a/src/java/com/android/internal/telephony/data/PhoneSwitcher.java
++++ b/src/java/com/android/internal/telephony/data/PhoneSwitcher.java
+@@ -2047,6 +2047,19 @@ public class PhoneSwitcher extends Handler {
+                 }
+             }
+             logl("onDdsSwitchResponse: Scheduling DDS switch retry");
++            // A37: batalkan retry yang masih tertunda untuk phoneId ini sebelum
++            // menjadwalkan yang baru.
++            //
++            // Tanpa ini setiap kegagalan menambah SATU pesan tertunda tanpa pernah
++            // membuang yang lama, sehingga antreannya menumpuk dan jeda efektifnya
++            // menyusut jauh di bawah MODEM_COMMAND_RETRY_PERIOD_MS. Terukur di
++            // perangkat: retry berdatangan tiap 0,2-0,5 detik, bukan 5 detik.
++            //
++            // Di perangkat normal RADIO akhirnya tersedia sehingga badai ini
++            // berhenti sendiri. Di sini kondisinya PERMANEN -- hanya ada HIDL radio
++            // 1.0/1.1 sementara Android 15 memecah radio HAL menjadi sub-servis
++            // AIDL -- jadi tumpukannya tidak pernah surut.
++            removeMessages(EVENT_MODEM_COMMAND_RETRY, phoneId);
+             sendMessageDelayed(Message.obtain(this, EVENT_MODEM_COMMAND_RETRY,
+                         phoneId), MODEM_COMMAND_RETRY_PERIOD_MS);
+             return;
+-- 
+2.43.0
+

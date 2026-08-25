@@ -1,0 +1,64 @@
+From ca2662d05b19e00ee71c8e28a709bb421593f786 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Mon, 17 Aug 2026 23:29:48 +0000
+Subject: [PATCH] A37: putus rekursi tak berujung di
+ PhoneSwitcher.onDdsSwitchResponse
+
+Cabang RADIO_NOT_AVAILABLE dirancang sebagai fallback SEKALI: pindah ke
+HAL_COMMAND_ALLOW_DATA lalu coba lagi seketika. Tapi tidak ada yang mencegah
+kegagalan berikutnya masuk ke cabang yang sama, memanggil sendRilCommands()
+lagi tanpa jeda, dan berputar tanpa henti.
+
+Di perangkat ini kondisinya PERMANEN: hanya tersedia HIDL radio 1.0/1.1
+sementara Android 15 memecah radio HAL menjadi sub-servis AIDL, sehingga
+RADIO_NOT_AVAILABLE tidak akan pernah berubah dan loopnya tidak berhenti sendiri.
+
+Terukur setelah perbaikan stack trace sebelumnya (yang hanya menghapus gejala):
+com.android.phone memakan 12 menit 39 detik CPU dalam uptime 17 menit, dengan
+RILJ dan PhoneSwitcher menghasilkan jumlah baris yang PERSIS SAMA (7271 : 7271
+per 6 detik) -- ciri khas pasangan panggilan-gagal yang berputar.
+
+Dengan syarat mHalCommandToUse != HAL_COMMAND_ALLOW_DATA, percobaan kedua jatuh
+ke jalur retry berjeda di bawahnya (MODEM_COMMAND_RETRY_PERIOD_MS = 5000 ms),
+persis seperti penanganan error lainnya di fungsi yang sama.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: I84b21604d65ad9d0024e49902dcacbeb3c9541bf
+---
+ .../telephony/data/PhoneSwitcher.java         | 20 ++++++++++++++++++-
+ 1 file changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/src/java/com/android/internal/telephony/data/PhoneSwitcher.java b/src/java/com/android/internal/telephony/data/PhoneSwitcher.java
+index 4d4f0a91fe..f137892b18 100644
+--- a/src/java/com/android/internal/telephony/data/PhoneSwitcher.java
++++ b/src/java/com/android/internal/telephony/data/PhoneSwitcher.java
+@@ -2021,7 +2021,25 @@ public class PhoneSwitcher extends Handler {
+                     hold the retry until sim gets ready */
+                     logl("onDdsSwitchResponse: Wait for SIM to get READY");
+                     return;
+-                } else if (error == CommandException.Error.RADIO_NOT_AVAILABLE) {
++                } else if (error == CommandException.Error.RADIO_NOT_AVAILABLE
++                        && mHalCommandToUse != HAL_COMMAND_ALLOW_DATA) {
++                    // A37: syarat mHalCommandToUse != HAL_COMMAND_ALLOW_DATA ditambahkan.
++                    //
++                    // Fallback ini dirancang terjadi SEKALI: pindah ke ALLOW_DATA lalu coba
++                    // lagi seketika. Tapi tanpa syarat itu, kegagalan berikutnya masuk ke
++                    // cabang yang sama, memanggil sendRilCommands() lagi tanpa jeda, dan
++                    // hasilnya rekursi tak berujung.
++                    //
++                    // Perangkat ini HIDL-only sementara Android 15 memecah radio HAL jadi
++                    // sub-servis AIDL, jadi RADIO_NOT_AVAILABLE bersifat PERMANEN dan
++                    // loop-nya tidak pernah berhenti sendiri. Terukur: com.android.phone
++                    // memakan 12 menit 39 detik CPU dalam uptime 17 menit -- satu core
++                    // terkunci penuh -- dengan RILJ dan PhoneSwitcher menghasilkan jumlah
++                    // baris yang persis sama (7271 : 7271 per 6 detik), ciri khas pasangan
++                    // panggilan-gagal yang berputar.
++                    //
++                    // Dengan syarat ini, percobaan kedua jatuh ke jalur retry berjeda di
++                    // bawah (MODEM_COMMAND_RETRY_PERIOD_MS), persis seperti error lainnya.
+                     logl("onDdsSwitchResponse: Falling back to HAL_COMMAND_ALLOW_DATA");
+                     mHalCommandToUse = HAL_COMMAND_ALLOW_DATA;
+                     sendRilCommands(phoneId);
+-- 
+2.43.0
+

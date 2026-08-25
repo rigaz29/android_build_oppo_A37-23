@@ -1,0 +1,80 @@
+From 4e072389fcec52121a3b060b63065b22dcc94273 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Mon, 17 Aug 2026 15:46:05 +0000
+Subject: [PATCH] A37: batasi stack trace 'radio service is disabled' agar
+ tidak membanjiri log
+
+Perangkat hanya menyediakan HIDL radio 1.0/1.1 sementara Android 15 memecah radio
+HAL menjadi sub-servis AIDL, sehingga sub-servis itu ditandai disabled dan
+pemanggilnya tetap mencoba terus. RIL.java:843 mencetak stack trace penuh pada
+SETIAP percobaan.
+
+Terukur di perangkat (tanpa simcard terpasang): ~7200 baris log per detik dan
+com.android.phone memakan 7 menit 45 detik CPU dalam uptime 8 menit. Biaya
+utamanya konstruksi new RuntimeException() dan penelusuran stack, bukan logd.
+
+Banjirnya juga menghabiskan seluruh buffer logcat sehingga tidak ada pesan RILJ
+lain yang tersisa untuk didiagnosis.
+
+Pesannya tetap dicatat setiap kali; hanya stack trace-nya yang dibatasi sekali
+per servis+slot, sehingga nilai diagnostiknya tidak hilang.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: I8889dc8b75bb01d30b48fb3da7f3396232e2b0f2
+---
+ .../com/android/internal/telephony/RIL.java   | 32 +++++++++++++++++--
+ 1 file changed, 29 insertions(+), 3 deletions(-)
+
+diff --git a/src/java/com/android/internal/telephony/RIL.java b/src/java/com/android/internal/telephony/RIL.java
+index 39b6d377ac..d46c5f37a7 100644
+--- a/src/java/com/android/internal/telephony/RIL.java
++++ b/src/java/com/android/internal/telephony/RIL.java
+@@ -238,6 +238,24 @@ public class RIL extends BaseCommands implements CommandsInterface {
+      */
+     private final SparseArray<Set<Integer>> mDisabledRadioServices = new SparseArray<>();
+ 
++    /**
++     * A37: penanda servis yang stack trace "is disabled"-nya SUDAH dicatat sekali.
++     *
++     * Perangkat ini hanya menyediakan HIDL radio @1.0/@1.1 (lshal: IRadio/slot1 dan
++     * /slot2), sedangkan Android 15 memecah radio HAL menjadi sub-servis AIDL
++     * (DATA, MESSAGING, MODEM, ...). Sub-servis itu tidak pernah ada, jadi ditandai
++     * disabled -- dan pemanggilnya tetap mencoba terus.
++     *
++     * Tanpa penanda ini, SETIAP percobaan membangun new RuntimeException(), menelusuri
++     * stack, memformatnya, lalu mencatatnya. Terukur di perangkat: ~7200 baris log per
++     * detik dan com.android.phone memakan 7 menit 45 detik CPU dalam uptime 8 menit --
++     * satu core terkunci penuh, dan itu sumber baterai boros yang nyata.
++     *
++     * Pesannya tetap dicatat setiap kali (murah); yang dibatasi hanya stack trace-nya,
++     * sehingga nilai diagnostiknya tidak hilang.
++     */
++    private final Set<String> mDisabledServiceTraceLogged = new HashSet<>();
++
+     /* default work source which will blame phone process */
+     private WorkSource mRILDefaultWorkSource;
+ 
+@@ -841,9 +859,17 @@ public class RIL extends BaseCommands implements CommandsInterface {
+ 
+         try {
+             if (mMockModem == null && mDisabledRadioServices.get(service).contains(mPhoneId)) {
+-                riljLoge("getRadioServiceProxy: " + serviceToString(service) + " for "
+-                        + HIDL_SERVICE_NAME[mPhoneId] + " is disabled\n"
+-                        + android.util.Log.getStackTraceString(new RuntimeException()));
++                // A37: stack trace hanya sekali per servis+slot. Lihat komentar pada
++                // mDisabledServiceTraceLogged.
++                final String traceKey = service + "/" + mPhoneId;
++                if (mDisabledServiceTraceLogged.add(traceKey)) {
++                    riljLoge("getRadioServiceProxy: " + serviceToString(service) + " for "
++                            + HIDL_SERVICE_NAME[mPhoneId] + " is disabled\n"
++                            + android.util.Log.getStackTraceString(new RuntimeException()));
++                } else {
++                    riljLoge("getRadioServiceProxy: " + serviceToString(service) + " for "
++                            + HIDL_SERVICE_NAME[mPhoneId] + " is disabled");
++                }
+                 return null;
+             } else {
+                 IBinder binder;
+-- 
+2.43.0
+
