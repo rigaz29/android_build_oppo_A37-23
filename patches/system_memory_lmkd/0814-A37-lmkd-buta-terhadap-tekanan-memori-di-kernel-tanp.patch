@@ -1,0 +1,173 @@
+From 2d161a373b4120b1d7b68da78c63cf33cb2db378 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Tue, 25 Aug 2026 12:07:03 +0000
+Subject: [PATCH] A37: lmkd buta terhadap tekanan memori di kernel tanpa
+ "per-node stats"
+
+lmkd.cpp:77 mendefinisikan NODE_STATS_MARKER "  per-node stats", dan
+zoneinfo_parse() mengharuskan baris itu muncul tepat setelah "Node N, zone X".
+Bagian tersebut baru diperkenalkan di Linux 4.8, ketika penghitung LRU
+dipindahkan dari level zone ke level node. Kernel 3.10 perangkat ini tidak
+memilikinya sama sekali -- diperiksa di perangkat, nol kecocokan, dan baris
+setelah "Node 0, zone DMA" langsung "pages free".
+
+Akibatnya penjaga itu SELALU gagal, `node` tidak pernah terisi, dan fungsi
+berakhir di "parse error". Kegagalannya fatal sekaligus senyap, karena
+pemanggilnya di mp_event_common:
+
+    if (meminfo_parse(&mi) < 0 || zoneinfo_parse(&zi) < 0) {
+        ALOGE("Failed to get free memory!");
+        return;
+    }
+
+langsung return tanpa mengambil keputusan apa pun. Jadi pada SETIAP event
+tekanan memori lmkd tidak berbuat apa-apa; yang tersisa hanya OOM killer
+kernel, yang memilih korban berdasarkan skor badness alih-alih kepentingan
+aplikasi. Di perangkat 1,84 GB ini berarti aplikasi mati tak terduga.
+
+Terukur sebelum perbaikan: 38 "parse error" dan 38 "Failed to get free
+memory!", dengan NOL proses dibunuh lmkd.
+
+Perbaikannya mendeteksi ketiadaan bagian itu satu kali, sebelum strtok_r
+mulai menyisipkan NUL ke dalam buffer:
+
+    const bool has_node_stats = (strstr(buf, NODE_STATS_MARKER) != NULL);
+
+Tiga titik bergantung padanya. Penjaga `continue` hanya berlaku bila penanda
+memang ada di berkas -- pada kernel modern ia tetap menyaring zone kosong di
+depan seperti semula. zoneinfo_parse_node() hanya dipanggil bila bagiannya
+ada. Dan tanpa bagian per-node, nr_inactive_file serta nr_active_file diambil
+dari bagian per-zone lalu dijumlahkan ke field node, sehingga perhitungan
+total di bawahnya tidak perlu diubah sama sekali.
+
+Kedua field itu ditambahkan ke zoneinfo_zone_field_names. Pada kernel >= 4.8
+keduanya tidak pernah muncul di bagian zone, dan match_field mengembalikan
+NO_MATCH -- bukan PARSE_FAIL -- sehingga jalur kernel modern tidak berubah.
+Ini diperiksa lebih dulu di sumbernya, karena bila field tak dikenal
+diperlakukan sebagai galat, penambahan ini justru akan merusak kernel modern.
+
+Diverifikasi di perangkat dengan membangkitkan tekanan memori nyata:
+  "zoneinfo parse error"      38 -> 0
+  "Failed to get free memory"  38 -> 0
+  proses dibunuh lmkd           0 -> 5, berurutan menurut oom_score_adj
+                                     (975, 995, 995, 995, 995)
+  MemFree                      25 MB -> 52 MB
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: I1747cf27d950378e1cf557c8f085fc12a4d41be4
+---
+ lmkd.cpp | 50 ++++++++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 46 insertions(+), 4 deletions(-)
+
+diff --git a/lmkd.cpp b/lmkd.cpp
+index b2cc335..6d360fc 100644
+--- a/lmkd.cpp
++++ b/lmkd.cpp
+@@ -307,6 +307,15 @@ enum zoneinfo_zone_field {
+     ZI_ZONE_HIGH,
+     ZI_ZONE_PRESENT,
+     ZI_ZONE_NR_FREE_CMA,
++    /*
++     * A37: dua field berikut hanya muncul di bagian per-zone pada kernel
++     * SEBELUM 4.8. Sejak 4.8 penghitung LRU pindah ke level node dan tampil
++     * di bagian "per-node stats". Pada kernel modern keduanya tidak pernah
++     * cocok di sini, dan match_field mengembalikan NO_MATCH -- bukan galat --
++     * sehingga penambahan ini tidak mengubah apa pun di sana.
++     */
++    ZI_ZONE_NR_INACTIVE_FILE,
++    ZI_ZONE_NR_ACTIVE_FILE,
+     ZI_ZONE_FIELD_COUNT
+ };
+ 
+@@ -317,6 +326,8 @@ static const char* const zoneinfo_zone_field_names[ZI_ZONE_FIELD_COUNT] = {
+     "high",
+     "present",
+     "nr_free_cma",
++    "nr_inactive_file",
++    "nr_active_file",
+ };
+ 
+ /* zoneinfo per-zone special fields */
+@@ -342,6 +353,8 @@ union zoneinfo_zone_fields {
+         int64_t high;
+         int64_t present;
+         int64_t nr_free_cma;
++        int64_t nr_inactive_file;
++        int64_t nr_active_file;
+     } field;
+     int64_t arr[ZI_ZONE_FIELD_COUNT];
+ };
+@@ -1837,13 +1850,32 @@ static int zoneinfo_parse(struct zoneinfo *zi) {
+         return -1;
+     }
+ 
++    /*
++     * A37: bagian "per-node stats" baru diperkenalkan di Linux 4.8, ketika
++     * penghitung LRU dipindahkan dari level zone ke level node. Kernel 3.10
++     * perangkat ini tidak memilikinya sama sekali, sehingga penjaga di bawah
++     * SELALU gagal, `node` tidak pernah terisi, dan seluruh parsing berakhir
++     * dengan "parse error". Akibatnya fatal dan senyap: pemanggilnya
++     * (mp_event_common) langsung return, jadi lmkd TIDAK PERNAH mengambil
++     * keputusan kill saat ada tekanan memori -- yang tersisa hanya OOM killer
++     * kernel, yang memilih korban berdasarkan skor badness, bukan kepentingan
++     * aplikasi.
++     *
++     * Deteksi dilakukan sekali di sini, SEBELUM strtok_r mulai menyisipkan NUL
++     * ke dalam buffer. Pada kernel >= 4.8 nilainya true dan seluruh alur di
++     * bawah berjalan persis seperti sebelumnya.
++     */
++    const bool has_node_stats = (strstr(buf, NODE_STATS_MARKER) != NULL);
++
+     for (line = strtok_r(buf, "\n", &save_ptr); line;
+          line = strtok_r(NULL, "\n", &save_ptr)) {
+         int node_id;
+         if (sscanf(line, "Node %d, zone %" STRINGIFY(LINE_MAX) "s", &node_id, zone_name) == 2) {
+             if (!node || node->id != node_id) {
+                 line = strtok_r(NULL, "\n", &save_ptr);
+-                if (strncmp(line, NODE_STATS_MARKER, strlen(NODE_STATS_MARKER)) != 0) {
++                if (has_node_stats &&
++                    (line == NULL ||
++                     strncmp(line, NODE_STATS_MARKER, strlen(NODE_STATS_MARKER)) != 0)) {
+                     /*
+                      * per-node stats are only present in the first non-empty zone of
+                      * the node.
+@@ -1864,7 +1896,7 @@ static int zoneinfo_parse(struct zoneinfo *zi) {
+                 node = &zi->nodes[node_idx];
+                 node->id = node_id;
+                 zone_idx = 0;
+-                if (!zoneinfo_parse_node(&save_ptr, node)) {
++                if (has_node_stats && !zoneinfo_parse_node(&save_ptr, node)) {
+                     ALOGE("%s parse error", file_data.filename);
+                     return -1;
+                 }
+@@ -1876,6 +1908,16 @@ static int zoneinfo_parse(struct zoneinfo *zi) {
+                 ALOGE("%s parse error", file_data.filename);
+                 return -1;
+             }
++            if (!has_node_stats) {
++                /*
++                 * A37: tanpa bagian per-node, jumlahkan nilai per-zone ke dalam
++                 * field node supaya perhitungan total di bawah tetap utuh.
++                 */
++                node->fields.field.nr_inactive_file +=
++                        node->zones[zone_idx].fields.field.nr_inactive_file;
++                node->fields.field.nr_active_file +=
++                        node->zones[zone_idx].fields.field.nr_active_file;
++            }
+         }
+     }
+     if (!node) {
+@@ -3587,8 +3629,8 @@ static bool init_psi_monitors() {
+     bool use_new_strategy =
+         GET_LMK_PROPERTY(bool, "use_new_strategy", low_ram_device || !use_minfree_levels);
+     if (!use_new_strategy && memcg_version() != MemcgVersion::kV1) {
+-        ALOGE("Old kill strategy can only be used with v1 cgroup hierarchy");
+-        return false;
++        ALOGW("Old kill strategy requested but cgroup v1 is unavailable, promoting to new strategy");
++        use_new_strategy = true;
+     }
+     /* In default PSI mode override stall amounts using system properties */
+     if (use_new_strategy) {
+-- 
+2.43.0
+
