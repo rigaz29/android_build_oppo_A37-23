@@ -1239,3 +1239,98 @@ membuktikan msm8916 sudah dihapus dari lapisan QCOM.
 Belum diunduh: `android_device_qcom_sepolicy` (`lineage-23.2-legacy`),
 `android_hardware_qcom-caf_common`, `MisterZtr/LineageOS_gsi`, device tree A37
 sendiri.
+
+
+---
+
+## 12. Peta migrasi camera provider ke AIDL
+
+Dipetakan 27 Agustus 2026 atas permintaan, **tidak dikerjakan**. Menyambung
+bagian 7b: Mi-Thorium sudah melewati penghapusan HIDL, dan pertanyaannya apakah
+A37 perlu mengikuti.
+
+### Keadaan sekarang, terverifikasi di perangkat
+
+```
+/system/bin/cameraserver  (pid 890)      <- HAL berjalan DI DALAM proses ini
+  |- camera.msm8916.so          103 KB   [hal3on1 adapter]
+      |- camera.legacy.msm8916.so  32 KB [CameraWrapper]
+          |- camera.vendor.msm8916.so 7,4 MB [blob HAL1 asli]
+```
+
+Rantainya terbaca dari sumber: `camera/hal3on1/Android.mk:59` membangun adapter
+sebagai `camera.$(TARGET_BOARD_PLATFORM)`, dan adapter itu memuat lapisan
+berikutnya lewat `hw_get_module_by_class("camera", "legacy")`
+(`HAL3on1-adapter.cpp:127`). `camera/Android.mk:59` membangun CameraWrapper
+sebagai `camera.legacy.$(TARGET_BOARD_PLATFORM)`, yang memuat blob asli lewat
+`hw_get_module_by_class("camera", "vendor")` (`CameraWrapper.cpp:192`).
+
+VINTF sekarang: HIDL `@2.4`, `transport passthrough`, instance `legacy/0`.
+`/vendor/bin/hw/` TIDAK punya biner kamera sama sekali.
+
+### Yang akan menggantikannya
+
+`hardware/lineage/interfaces/camera/aidl/provider/` menyediakan dua modul yang
+berbagi satu fragmen VINTF:
+
+| | |
+|---|---|
+| Modul untuk A37 | `android.hardware.camera.provider-service.lineage` |
+| Varian `_32` | hanya `compile_multilib: "32"`, untuk platform 64-bit berblob 32-bit seperti Mi-Thorium. A37 `TARGET_ARCH=arm` murni 32-bit, jadi varian biasa, sama seperti a6010 |
+| Instance | `ICameraProvider/internal/0` -- BUKAN `legacy/0` |
+| Berjalan sebagai | user `cameraserver`, `class hal`, `ioprio rt 4`, `capabilities SYS_NICE` |
+| VINTF | dibawa paketnya sendiri lewat `vintf_fragments`, seperti LiveDisplay |
+
+### Kabar baik: rantai HAL tidak tersentuh
+
+`CameraProvider.cpp:190-197`:
+
+```c
+hw_get_module(CAMERA_HARDWARE_MODULE_ID, (const hw_module_t**)&rawModule);
+mModule = new CameraModule(rawModule);
+```
+
+Jalur pemuatan modulnya persis sama dengan yang dipakai sekarang. hal3on1,
+CameraWrapper, dan blob tetap apa adanya -- termasuk 286 baris perbaikan A37 di
+adapter dan pin `libthermalclient` di wrapper.
+
+### Daftar perubahan yang diperlukan
+
+1. `device.mk` -- tukar `android.hardware.camera.provider@2.4-impl` menjadi
+   `android.hardware.camera.provider-service.lineage`. PERTAHANKAN
+   `camera.device@1.0-impl`, `camera.msm8916`, `camera.legacy.msm8916`; a6010
+   juga mempertahankan ketiganya.
+2. `manifest.xml` -- cabut blok HIDL `android.hardware.camera.provider`.
+3. sepolicy -- biner `/vendor/bin/hw/android.hardware.camera.provider-service.lineage`
+   TIDAK punya label di pohon ini. Dicari di `system/sepolicy`,
+   `vendor/lineage/sepolicy`, dan `device/qcom/sepolicy-legacy`: nol hasil.
+   Permissive tidak memblokir, tapi perlu untuk kebenaran.
+4. Matriks kompatibilitas framework -- pastikan menerima camera provider AIDL V1.
+
+### Risiko: perubahan ini pernah dicoba dan GAGAL
+
+Migrasi mengubah MODEL PROSES, dari HAL di dalam cameraserver menjadi proses
+binderized terpisah. `manifest.xml:82-92` mencatat percobaan itu: transport
+diubah ke hwbinder pada build `20260803_161352`, hasilnya LAYAR HITAM di
+homescreen. Penyebabnya tidak pernah ditemukan.
+
+Hipotesis, BELUM DIUJI: adapter hal3on1 memakai ION 122 kali dengan
+`mmap(..., MAP_SHARED, fd, 0)` tetapi NOL kemunculan `native_handle` dan nol
+`dup()`. `native_handle` adalah mekanisme yang membawa fd melintasi batas proses
+di HIDL/AIDL. Saat passthrough, pointer hasil mmap sah karena HAL dan klien satu
+ruang alamat; saat binderized tidak.
+
+Yang melemahkan hipotesis itu: lapisan `camera.device@1.0-impl` di atasnya
+mungkin yang mengurus marshalling, karena HAL1 menyerahkan fd lewat
+`camera_request_memory(int fd, ...)`. Jadi belum tentu adapter yang salah.
+
+### Rekomendasi
+
+JANGAN kerjakan sekarang. Kamera A37 berfungsi penuh (foto dan video, dua-duanya
+kamera). Migrasi ini tidak memperbaiki bug apa pun; nilainya baru muncul kalau
+LineageOS mencabut dukungan provider HIDL.
+
+Kalau suatu saat terpaksa, urutannya: CARI DULU penyebab layar hitam
+`20260803_161352` dengan menyalakan hwbinder pada build khusus dan menangkap log
+`cameraserver` plus `vendor.camera-provider` saat gagal. Tanpa itu, migrasi AIDL
+hanya mengulangi percobaan yang sama dengan nama berbeda.
