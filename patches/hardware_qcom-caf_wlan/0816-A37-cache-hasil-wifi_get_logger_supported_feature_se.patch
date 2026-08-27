@@ -1,0 +1,95 @@
+From 0a0414b83761c6cfb0e0d281e6587584ac048125 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Thu, 27 Aug 2026 03:33:35 +0000
+Subject: [PATCH] A37: cache hasil wifi_get_logger_supported_feature_set yang
+ selalu ditolak
+
+Driver prima (msm8916) tidak mengimplementasikan
+QCA_NL80211_VENDOR_SUBCMD_GET_LOGGER_FEATURE_SET, jadi panggilan ini selalu
+mengembalikan WIFI_ERROR_NOT_SUPPORTED (-3). Kemampuan driver tidak berubah
+saat runtime, tetapi framework memanggilnya pada setiap siklus polling
+link-layer stats: terukur di perangkat sekitar 20 kali per menit selama Wi-Fi
+tersambung dan layar menyala (155 kejadian dalam jendela 8 menit).
+
+Tiap panggilan membangun WifiLoggerCommand, menyusun pesan netlink,
+mengirimnya, menunggu balasan, lalu mencatat satu baris ALOGE untuk hasil
+yang sudah pasti.
+
+Setelah driver menjawab NOT_SUPPORTED sekali, hasilnya di-cache sehingga
+panggilan berikutnya kembali seketika tanpa netlink dan tanpa log. Pola yang
+sama dengan penjaga getLinkLayerStats (patch 0815); bedanya di sini jawabannya
+statis sehingga satu kegagalan sudah cukup, tidak perlu hitungan berturut-turut.
+
+Latch-nya satu arah, jadi balapan antar-thread paling buruk hanya membuat
+panggilan netlink terjadi dua kali; tidak ada masalah kebenaran.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: I9e7eb76e6f139eda8023a1fbb865be606c56e7e8
+---
+ qcwcn/wifi_hal/wifilogger.cpp | 36 +++++++++++++++++++++++++++++++++--
+ 1 file changed, 34 insertions(+), 2 deletions(-)
+
+diff --git a/qcwcn/wifi_hal/wifilogger.cpp b/qcwcn/wifi_hal/wifilogger.cpp
+index 73bf046..01043e3 100644
+--- a/qcwcn/wifi_hal/wifilogger.cpp
++++ b/qcwcn/wifi_hal/wifilogger.cpp
+@@ -255,6 +255,25 @@ void WifiLoggerCommand::setFeatureSet(u32 *support) {
+ }
+ 
+ /*  Function to get the supported feature set for logging.*/
++/*
++ * A37: driver prima (msm8916) tidak mengimplementasikan
++ * QCA_NL80211_VENDOR_SUBCMD_GET_LOGGER_FEATURE_SET, jadi panggilan ini SELALU
++ * mengembalikan WIFI_ERROR_NOT_SUPPORTED (-3). Kemampuan driver tidak berubah
++ * saat runtime, tetapi framework memanggilnya pada setiap siklus polling
++ * link-layer stats: terukur di perangkat sekitar 20 kali per menit selama
++ * Wi-Fi tersambung dan layar menyala.
++ *
++ * Tiap panggilan membangun WifiLoggerCommand, menyusun pesan netlink,
++ * mengirimnya, menunggu balasan, lalu mencatat satu baris ALOGE. Hasilnya
++ * sudah pasti dan tidak pernah berubah.
++ *
++ * Setelah driver menjawab NOT_SUPPORTED sekali, hasilnya di-cache sehingga
++ * panggilan berikutnya kembali seketika tanpa netlink dan tanpa log. Pola yang
++ * sama dengan penjaga getLinkLayerStats (patch 0815); bedanya di sini
++ * jawabannya statis, jadi satu kegagalan sudah cukup.
++ */
++static bool sLoggerFeatureSetUnsupported = false;
++
+ wifi_error wifi_get_logger_supported_feature_set(wifi_interface_handle iface,
+                                                  u32 *support)
+ {
+@@ -265,6 +284,12 @@ wifi_error wifi_get_logger_supported_feature_set(wifi_interface_handle iface,
+     interface_info *ifaceInfo = getIfaceInfo(iface);
+     wifi_handle wifiHandle = getWifiHandle(iface);
+ 
++    if (sLoggerFeatureSetUnsupported) {
++        if (support)
++            *support = 0;
++        return WIFI_ERROR_NOT_SUPPORTED;
++    }
++
+     /* No request id from caller, so generate one and pass it on to the driver.
+      * Generate one randomly.
+      */
+@@ -308,8 +333,15 @@ wifi_error wifi_get_logger_supported_feature_set(wifi_interface_handle iface,
+ 
+     /* Send the msg and wait for a response. */
+     ret = wifiLoggerCommand->requestResponse();
+-    if (ret != WIFI_SUCCESS)
+-        ALOGE("%s: Error %d happened. ", __FUNCTION__, ret);
++    if (ret != WIFI_SUCCESS) {
++        if (ret == WIFI_ERROR_NOT_SUPPORTED) {
++            /* A37: jawaban permanen, catat sekali lalu berhenti bertanya. */
++            sLoggerFeatureSetUnsupported = true;
++            ALOGI("%s: tidak didukung driver, hasil di-cache", __FUNCTION__);
++        } else {
++            ALOGE("%s: Error %d happened. ", __FUNCTION__, ret);
++        }
++    }
+ 
+ cleanup:
+     delete wifiLoggerCommand;
+-- 
+2.43.0
+

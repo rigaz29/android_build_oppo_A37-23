@@ -1,0 +1,83 @@
+From d961ef47a3dc7b9157697f20d4abc2036551f3e7 Mon Sep 17 00:00:00 2001
+From: rigaz29 <ryanbagas27@gmail.com>
+Date: Thu, 27 Aug 2026 03:33:37 +0000
+Subject: [PATCH] A37: batasi stack trace kegagalan BluetoothActivityEnergyInfo
+
+Controller Bluetooth perangkat ini tidak mendukung pelaporan energi aktivitas,
+sehingga requestControllerActivityEnergyInfo() selalu memanggil
+onBluetoothActivityEnergyInfoError(). Kegagalannya permanen, bukan sementara.
+
+Yang mahal bukan kegagalannya melainkan pencatatannya: tiap siklus pengumpulan
+statistik daya membangun RuntimeException, menelusuri stack, memformatnya, lalu
+menulis sekitar 25 baris. Terukur di perangkat: 23 kegagalan menghasilkan 575
+baris log dalam 3,3 jam.
+
+Tiga kegagalan pertama tetap dicatat lengkap dengan stack trace supaya nilai
+diagnostiknya utuh; sesudahnya pesannya tetap dicatat (murah) tetapi tanpa
+penelusuran stack. Pola yang sama dengan mDisabledServiceTraceLogged di
+RIL.java (patch 0809).
+
+Panggilannya sendiri sengaja dipertahankan: frekuensinya hanya sekitar 7 kali
+per jam sehingga ongkosnya dapat diabaikan, dan menghapusnya akan mematikan
+fitur ini seandainya controller suatu saat mendukungnya.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: Ie52c9c409b40f30a6ebb9399636bd0f06f9808ec
+---
+ .../stats/BluetoothPowerStatsCollector.java   | 33 ++++++++++++++++++-
+ 1 file changed, 32 insertions(+), 1 deletion(-)
+
+diff --git a/services/core/java/com/android/server/power/stats/BluetoothPowerStatsCollector.java b/services/core/java/com/android/server/power/stats/BluetoothPowerStatsCollector.java
+index e0ea7b0359b2..6a7a9f777ca3 100644
+--- a/services/core/java/com/android/server/power/stats/BluetoothPowerStatsCollector.java
++++ b/services/core/java/com/android/server/power/stats/BluetoothPowerStatsCollector.java
+@@ -83,6 +83,27 @@ public class BluetoothPowerStatsCollector extends PowerStatsCollector {
+     private long mLastTxTime;
+     private long mLastIdleTime;
+ 
++    /**
++     * A37: berapa kali kegagalan pengambilan BluetoothActivityEnergyInfo masih
++     * dicatat LENGKAP dengan stack trace.
++     *
++     * Controller Bluetooth perangkat ini tidak mendukung pelaporan energi
++     * aktivitas, jadi requestControllerActivityEnergyInfo() SELALU memanggil
++     * onBluetoothActivityEnergyInfoError(). Kegagalannya permanen, bukan
++     * sementara.
++     *
++     * Yang mahal bukan kegagalannya melainkan pencatatannya: tiap siklus
++     * pengumpulan statistik daya membangun RuntimeException, menelusuri stack,
++     * memformatnya, lalu menulis ~25 baris. Terukur di perangkat: 23 kegagalan
++     * menghasilkan 575 baris log.
++     *
++     * Tiga yang pertama tetap lengkap supaya nilai diagnostiknya utuh;
++     * sesudahnya pesannya tetap dicatat (murah) tapi tanpa stack trace. Ini
++     * pola yang sama dengan mDisabledServiceTraceLogged di RIL.java.
++     */
++    private static final int MAX_ACTIVITY_INFO_FAILURE_TRACES = 3;
++    private int mActivityInfoFailures;
++
+     private static class UidStats {
+         public long rxCount;
+         public long lastRxCount;
+@@ -191,7 +212,17 @@ public class BluetoothPowerStatsCollector extends PowerStatsCollector {
+             activityInfo = immediateFuture.get(BLUETOOTH_ACTIVITY_REQUEST_TIMEOUT,
+                     TimeUnit.MILLISECONDS);
+         } catch (Exception e) {
+-            Slog.e(TAG, "Cannot acquire BluetoothActivityEnergyInfo", e);
++            // A37: batasi stack trace, lihat MAX_ACTIVITY_INFO_FAILURE_TRACES.
++            if (mActivityInfoFailures < MAX_ACTIVITY_INFO_FAILURE_TRACES) {
++                mActivityInfoFailures++;
++                Slog.e(TAG, "Cannot acquire BluetoothActivityEnergyInfo", e);
++                if (mActivityInfoFailures == MAX_ACTIVITY_INFO_FAILURE_TRACES) {
++                    Slog.e(TAG, "Cannot acquire BluetoothActivityEnergyInfo:"
++                            + " kegagalan berikutnya dicatat tanpa stack trace");
++                }
++            } else {
++                Slog.w(TAG, "Cannot acquire BluetoothActivityEnergyInfo: " + e);
++            }
+             activityInfo = null;
+         }
+ 
+-- 
+2.43.0
+
