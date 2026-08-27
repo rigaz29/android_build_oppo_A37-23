@@ -1243,13 +1243,16 @@ sendiri.
 
 ---
 
-## 12. Peta migrasi camera provider ke AIDL
+## 12. Migrasi camera provider ke AIDL -- SELESAI dan TERBUKTI
 
-Dipetakan 27 Agustus 2026 atas permintaan, **tidak dikerjakan**. Menyambung
-bagian 7b: Mi-Thorium sudah melewati penghapusan HIDL, dan pertanyaannya apakah
-A37 perlu mengikuti.
+Dipetakan lalu **dikerjakan** 27 Agustus 2026, commit `aaf1d620`, ROM
+`lineage-23.2-20260827_072056`. Menyambung bagian 7b: Mi-Thorium sudah melewati
+penghapusan HIDL, dan A37 kini menyusul.
 
-### Keadaan sekarang, terverifikasi di perangkat
+**Hasilnya: berhasil.** Rinciannya di sub-bagian terakhir. Bagian peta di bawah
+dipertahankan apa adanya karena masih menjelaskan arsitekturnya.
+
+### Keadaan SEBELUM migrasi, terverifikasi di perangkat
 
 ```
 /system/bin/cameraserver  (pid 890)      <- HAL berjalan DI DALAM proses ini
@@ -1307,30 +1310,62 @@ adapter dan pin `libthermalclient` di wrapper.
    Permissive tidak memblokir, tapi perlu untuk kebenaran.
 4. Matriks kompatibilitas framework -- pastikan menerima camera provider AIDL V1.
 
-### Risiko: perubahan ini pernah dicoba dan GAGAL
+### Kekhawatiran lama yang ternyata TIDAK terbukti
 
-Migrasi mengubah MODEL PROSES, dari HAL di dalam cameraserver menjadi proses
-binderized terpisah. `manifest.xml:82-92` mencatat percobaan itu: transport
-diubah ke hwbinder pada build `20260803_161352`, hasilnya LAYAR HITAM di
-homescreen. Penyebabnya tidak pernah ditemukan.
+Sebelum dikerjakan, risiko terbesarnya begini: migrasi mengubah MODEL PROSES,
+dari HAL di dalam cameraserver menjadi proses binderized terpisah, dan
+`manifest.xml:82-92` mencatat bahwa perubahan serupa pada build
+`20260803_161352` menghasilkan LAYAR HITAM di homescreen.
 
-Hipotesis, BELUM DIUJI: adapter hal3on1 memakai ION 122 kali dengan
+Hipotesis waktu itu: adapter hal3on1 memakai ION 122 kali dengan
 `mmap(..., MAP_SHARED, fd, 0)` tetapi NOL kemunculan `native_handle` dan nol
-`dup()`. `native_handle` adalah mekanisme yang membawa fd melintasi batas proses
-di HIDL/AIDL. Saat passthrough, pointer hasil mmap sah karena HAL dan klien satu
-ruang alamat; saat binderized tidak.
+`dup()`, sehingga buffer tidak akan sah melintasi batas proses.
 
-Yang melemahkan hipotesis itu: lapisan `camera.device@1.0-impl` di atasnya
-mungkin yang mengurus marshalling, karena HAL1 menyerahkan fd lewat
-`camera_request_memory(int fd, ...)`. Jadi belum tentu adapter yang salah.
+**Hipotesis itu SALAH.** Perangkat boot normal 32 detik, homescreen tampil, dan
+foto dari kedua kamera bersih. Buffer melintasi batas proses dengan benar; yang
+mengurus marshalling memang lapisan `camera.device@1.0-impl` di atasnya, karena
+HAL1 menyerahkan fd lewat `camera_request_memory(int fd, ...)`.
 
-### Rekomendasi
+Artinya penyebab layar hitam `20260803_161352` BUKAN perpindahan proses. Kalau
+suatu saat perlu dicari, sisa tersangkanya ada di jalur transport HIDL hwbinder
+itu sendiri, bukan di rantai HAL.
 
-JANGAN kerjakan sekarang. Kamera A37 berfungsi penuh (foto dan video, dua-duanya
-kamera). Migrasi ini tidak memperbaiki bug apa pun; nilainya baru muncul kalau
-LineageOS mencabut dukungan provider HIDL.
+### Hasil uji di perangkat
 
-Kalau suatu saat terpaksa, urutannya: CARI DULU penyebab layar hitam
-`20260803_161352` dengan menyalakan hwbinder pada build khusus dan menangkap log
-`cameraserver` plus `vendor.camera-provider` saat gagal. Tanpa itu, migrasi AIDL
-hanya mengulangi percobaan yang sama dengan nama berbeda.
+| yang diperiksa | hasil |
+|---|---|
+| Boot | normal, 32 detik, homescreen tampil |
+| Provider | proses sendiri, user `cameraserver`, terpisah dari `cameraserver` |
+| Interface | `ICameraProvider/internal/0` terdaftar di servicemanager |
+| Kamera terenumerasi | 2 |
+| Preview | hidup, terverifikasi lewat tangkapan layar |
+| Foto belakang | 2448x3264, JPEG valid, gambar bersih |
+| Foto depan | 1944x2592, JPEG valid |
+
+### Jebakan kalau memasang MANUAL, bukan flash
+
+Pemasangan manual pertama gagal dengan `CANNOT LINK EXECUTABLE`. Penyebabnya
+`android.hardware.camera.metadata-V1-ndk.so` adalah dependensi TRANSITIF dari
+`android.hardware.camera.device-V1-ndk.so`, bukan dari binernya, sehingga
+terlewat kalau yang diperiksa hanya DT_NEEDED biner provider.
+
+Lima pustaka yang harus ada di `/vendor/lib`:
+
+```
+android.hardware.camera.common-V1-ndk.so
+android.hardware.camera.device-V1-ndk.so
+android.hardware.camera.provider-V1-ndk.so
+android.hardware.camera.metadata-V1-ndk.so   <- yang mudah terlewat
+camera.device-impl.lineage.so
+```
+
+ROM hasil build sudah memuat kelimanya; soong menyelesaikan dependensi
+transitifnya sendiri. Jebakan ini HANYA berlaku untuk pemasangan manual.
+
+### Yang masih tersisa
+
+Crash `pthread_key_clean_all` saat kamera ditutup masih ada (tombstone dengan
+backtrace `pthread_key_clean_all` -> `pthread_exit` -> `__pthread_start`). Itu
+masalah lama 23.2, BUKAN akibat migrasi. Sesudah migrasi justru lebih baik
+TERISOLASI: yang mati proses provider, `cameraserver` selamat, dan kamera
+langsung bisa dipakai lagi. Sebelumnya crash yang sama mengenai `cameraserver`.
