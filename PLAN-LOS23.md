@@ -416,6 +416,12 @@ ikuti keadaan akhir branch.
 Perhatikan juga rentetan `Revert` terhadap `oom_reaper` dan `process_mrelease` —
 acroreiser membuangnya di 23.2. Kalau kernel A37 punya, pertimbangkan hal serupa.
 
+**Daftar kandidat backport yang lebih lengkap ada di `PLAN-BACKPORT-KERNEL.md`**
+(30 Agustus 2026): PSI, `workingset`, `lockref`, `vmacache` — seluruhnya sudah
+ada dalam bentuk jadi di pohon acroreiser pada kernel 3.10.108 yang sama.
+Dokumen itu juga mencatat yang sengaja DITOLAK berikut alasannya (eBPF,
+userfaultfd, binder baru, schedutil, EROFS) dan kenapa f2fs sudah mentok.
+
 ---
 
 ## 7. Rencana userspace
