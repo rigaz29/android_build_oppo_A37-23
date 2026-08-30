@@ -153,6 +153,34 @@ ada alat ukur sebelum mengubah perilaku reclaim.
 
 ---
 
+## 2b. Tabel kunci bersama untuk DIRECT_KEY — sekarang ada angkanya
+
+Ditambahkan 31 Agustus 2026, setelah Adiantum berjalan di perangkat.
+
+Sebelumnya ini cuma dugaan. Sekarang terukur langsung dari `/proc/crypto` pada
+sistem yang hidup:
+
+```
+name    adiantum(xchacha12,aes)
+driver  adiantum(xchacha12-neon, aes-generic, nhpoly1305-neon)
+refcnt  3011   (uptime 7 menit, setelah pemindaian paket)
+        2148   (uptime 2 menit, baru boot)
+```
+
+Sekitar **3000 instans tfm hidup bersamaan**, satu per inode, karena `fs/crypto`
+kita mengalokasikan tfm per inode (`keyinfo.c:370`, `:384`) sementara acroreiser
+membaginya lewat hashtable ber-refcount (`fs/ext4/crypto_key.c:23,95,278`).
+
+Dalam mode DIRECT_KEY seluruhnya memakai **kunci master yang sama**, jadi ~3000
+salinan itu menyimpan kunci identik. Tiap instans membawa empat tfm bersarang;
+yang terbesar kunci NH 1072 byte. Selain memori, tiap inode juga membayar
+`setkey` Adiantum senilai 1136 byte keystream XChaCha12.
+
+Angka ini menaikkan prioritas butir ini — tapi tidak mengubah urutan: perangkat
+berjalan normal, dan PSI tetap lebih dulu karena ia yang menyediakan alat ukur.
+
+---
+
 ## 4. Prioritas 3 — `lib/lockref.c` + `mm/vmacache.c`
 
 Paling murah dan paling rendah risikonya dari seluruh daftar. Keduanya tidak

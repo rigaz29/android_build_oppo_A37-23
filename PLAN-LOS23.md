@@ -1375,3 +1375,78 @@ backtrace `pthread_key_clean_all` -> `pthread_exit` -> `__pthread_start`). Itu
 masalah lama 23.2, BUKAN akibat migrasi. Sesudah migrasi justru lebih baik
 TERISOLASI: yang mati proses provider, `cameraserver` selamat, dan kamera
 langsung bisa dipakai lagi. Sebelumnya crash yang sama mengenai `cameraserver`.
+
+---
+
+## 13. Adiantum FBE — SELESAI dan TERBUKTI
+
+31 Agustus 2026. `/data` diformat ulang dan ROM di-flash.
+
+### Yang berjalan
+
+```
+/proc/crypto
+  name    adiantum(xchacha12,aes)
+  driver  adiantum(xchacha12-neon, aes-generic, nhpoly1305-neon)
+  refcnt  3011
+
+AES: nol -- tidak ada xts/cts dengan refcnt aktif
+kernel: 3.10.108-lineageos-gb4799b06c556   (commit DIRECT_KEY)
+/data:  f2fs, inline_xattr + inline_data + inline_dentry
+        ro.crypto.type=file, ro.crypto.state=encrypted
+```
+
+Throughput sistem berkas nyata, berkas 128 MB dengan cache dibuang:
+
+```
+tulis  33 MB/s
+baca   96 MB/s
+```
+
+Bandingkan dengan pengukuran cipher lewat AF_ALG sebelumnya — 101,90 MB/s
+Adiantum versus 30,81 MB/s AES. Angka sistem berkas lebih rendah karena
+menyertakan f2fs dan eMMC, bukan cipher saja.
+
+### Penghalang yang hampir terlewat
+
+`libfscrypt` **selalu** menyalakan `FSCRYPT_POLICY_FLAG_DIRECT_KEY` begitu
+mode-nya Adiantum (`system/extras/libfscrypt/fscrypt.cpp:261`), tanpa cara
+mematikannya dari fstab. Kernel stok menyaringnya di dua tempat --
+`fs/crypto/policy.c:45` saat kebijakan dipasang dan `fs/crypto/keyinfo.c:301`
+saat konteks dibaca -- karena `FS_POLICY_FLAGS_VALID` hanya 0x03.
+
+Tanpa commit `b4799b06c556` ROM ini tidak akan boot sama sekali. Cipher
+Adiantum yang sudah terukur 3,31x itu tidak ada gunanya untuk FBE tanpa
+dukungan flag ini.
+
+### TWRP juga
+
+`recovery-twrp121-directkey.img` meminta PIN dan membuka `/data`. Log recovery
+menunjukkan kedua kunci terpasang:
+
+```
+recovery: fscrypt_prepare_user_storage  user 0, flags 1     <- DE
+recovery: fscrypt_unlock_user_key 0
+recovery: fscrypt_prepare_user_storage  user 0, flags 2     <- CE
+```
+
+Dan di sisi ROM, `/data/system_ce/0/` terbaca (`accounts_ce.db`, `appsearch`,
+`appwidget`) -- penyimpanan berkredensial benar-benar terbuka.
+
+### Catatan build
+
+Build ROM ini gagal empat kali sebelum jadi, dan hanya satu yang soal kode:
+
+1. `KERNEL_OBJ/usr` -- dependensi hantu di `sensors/Android.mk`; build selama
+   ini hanya berhasil di pohon `out` yang kotor
+2. Disk penuh di 97% setelah 5 jam 50 menit; `out/` tumbuh 13 GB -> 71 GB
+3. Susulan dari (2): `apexd_host` dan `system.img` terpotong diam-diam. Ninja
+   menganggapnya selesai karena stempel waktunya berubah. 357 berkas di jendela
+   itu dibuang dan dibangun ulang
+4. `test/` dihapus sebagai "tidak terpakai" -- salah: ia mendefinisikan tipe
+   modul `csuite_test` yang dibutuhkan `frameworks/base` dan `art/test` saat
+   analisis. Dipulihkan dengan `repo sync -l` dari objek lokal
+
+Pelajaran (2)-(3): jangan menyalakan build besar tanpa pemantau ruang disk.
+Kegagalan tulis akibat disk penuh tidak selalu menghentikan build -- ia
+meninggalkan berkas separuh yang lolos sebagai "sudah dibangun".
