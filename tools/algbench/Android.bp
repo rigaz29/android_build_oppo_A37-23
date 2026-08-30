@@ -1,0 +1,7 @@
+cc_binary {
+    name: "algbench",
+    srcs: ["algbench.c"],
+    cflags: ["-O2", "-Wall"],
+    static_executable: true,
+    compile_multilib: "32",
+}
