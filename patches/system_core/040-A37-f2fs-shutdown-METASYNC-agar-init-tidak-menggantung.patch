@@ -1,0 +1,40 @@
+diff --git a/init/reboot.cpp b/init/reboot.cpp
+index 559282e5e..d0fb8abf4 100644
+--- a/init/reboot.cpp
++++ b/init/reboot.cpp
+@@ -1003,7 +1003,34 @@ static void DoReboot(unsigned int cmd, const std::string& reason,
+         // Do not delete: Critical log for reboot_fs_integrity_test.
+         KLOG_WARNING(LOG_TAG, "Umount /data failed, try to use ioctl to shutdown");
+         if (data_fs_type == "f2fs") {
+-            uint32_t flag = F2FS_GOING_DOWN_FULLSYNC;
++            /*
++             * A37: METASYNC, BUKAN FULLSYNC.
++             *
++             * FULLSYNC menjalankan freeze_bdev() -> freeze_super() ->
++             * sb_wait_write(), yang menunggu semua penulis selesai. Pada kernel
++             * 3.10 perangkat ini penantian itu tidak pernah berakhir, sehingga
++             * init (PID 1) tersangkut di dalam kernel dan seluruh shutdown mati
++             * suri. Terbaca di console-ramoops:
++             *
++             *   init: Umount /data failed, try to use ioctl to shutdown
++             *   init: Invoking F2FS_IOC_SHUTDOWN during shutdown
++             *   INFO: task init:1 blocked for more than 90 seconds
++             *     sb_wait_write <- freeze_super <- freeze_bdev <- f2fs_ioctl
++             *
++             * Gejalanya: layar hitam saat reboot biasa maupun reboot ke
++             * recovery, sampai reboot monitor memaksa reboot 270 detik
++             * kemudian. Pengguna selalu mencabut daya lebih dulu, dan karena
++             * checkpoint tidak pernah ditulis, f2fs mundur ke checkpoint
++             * terakhir saat mount berikutnya -- berkas yang baru disalin hilang.
++             *
++             * METASYNC menjalankan f2fs_sync_fs(sb, 1) yang MENULIS CHECKPOINT,
++             * lalu f2fs_stop_checkpoint(). Tidak pernah menyentuh freeze_bdev,
++             * jadi tidak ada yang menggantung, dan datanya tetap tahan reboot.
++             *
++             * NOSYNC juga menghilangkan hang tapi melewatkan checkpoint,
++             * sehingga justru menjamin kehilangan data. Sengaja tidak dipakai.
++             */
++            uint32_t flag = F2FS_GOING_DOWN_METASYNC;
+             unique_fd fd(TEMP_FAILURE_RETRY(open("/data", O_RDONLY)));
+             LOG(INFO) << "Invoking F2FS_IOC_SHUTDOWN during shutdown";
+             int ret = ioctl(fd.get(), F2FS_IOC_SHUTDOWN, &flag);
