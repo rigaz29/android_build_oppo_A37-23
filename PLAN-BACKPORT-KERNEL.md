@@ -350,6 +350,125 @@ mengubah format apa pun dan tidak menyentuh perilaku, hanya jalur pencarian:
 Cocok dikerjakan lebih dulu kalau tujuannya membiasakan alur backport dari pohon
 donor tanpa mempertaruhkan apa pun.
 
+### SELESAI 31 Agustus 2026 — 13 commit, digabung ke `lineage-23` (`d346f9cd9cfd`) dan `twrp-12.1` (`29cc5a6be0fe`)
+
+Perkiraan "paling murah dan paling rendah risikonya" **benar** — berbeda dari
+PSI (§2) dan workingset (§3) yang perkiraannya meleset jauh. Rantainya memang
+kecil: 12 commit donor + 1 adaptasi.
+
+#### Temuan yang membalik penilaian: kita dapat lebih banyak daripada donor
+
+`lockref` punya DUA jalur. Yang cepat memakai cmpxchg lockless; yang lambat
+jatuh ke spinlock biasa dan praktis tidak lebih baik dari sebelumnya. Jalur
+cepat menuntut dua prasyarat arsitektur, dan **pohon ini sudah punya keduanya**:
+
+```
+arch/arm64/Kconfig:5                      select ARCH_USE_CMPXCHG_LOCKREF
+arch/arm64/include/asm/spinlock.h:95      arch_spin_value_unlocked()
+-> CONFIG_CMPXCHG_LOCKREF=y   (terverifikasi di .config hasil build)
+```
+
+acroreiser membangun **arm32**, dan `arch/arm/Kconfig` mereka nol
+`ARCH_USE_CMPXCHG_LOCKREF`. Jadi donor kita hanya mendapat jalur spinlock.
+Untuk fitur ini posisi kita lebih baik daripada pohon yang kita salin.
+
+⚠️ Catatan metode: pemeriksaan pertama sempat melaporkan `arch_spin_value_unlocked`
+nol di kedua pohon. Itu **salah** — pencariannya hanya mencakup `include/linux/`,
+`fs/dcache.c`, dan `mm/`, tidak menyentuh `arch/arm64/include/asm/`. Kalau tidak
+diperiksa ulang, kesimpulannya akan terbalik.
+
+#### Rantai yang dipakai
+
+```
+9a0d532f5b  mm: per-thread vma caching              <- vmacache, 1 commit, 12 berkas
+51fe095f96  helper for reading ->d_count
+655531d8ec  vfs: constify dentry parameter in d_count()
+4847b77e39  Add new lockref infrastructure reference implementation
+ba79b5a766  vfs: make the dentry cache use the lockref infrastructure
+c5a39a374d  lockref: add lockref_get_or_lock() helper
+56056ceed5  vfs: use lockref_get_not_zero() for optimistic lockless dget_parent()
+787249b0d0  vfs: reimplement d_rcu_to_refcount() using lockref_get_or_lock()
+e86016071d  lockref: uninline lockref helper functions
+b5c9cb60f0  lockref: implement lockless reference count updates using cmpxchg()
+a64c1fee15  lockref: Relax in cmpxchg loop
+5763125f3c  lockref: add ability to mark lockrefs "dead"
+```
+
+Pencarian awal berbasis jalur berkas menghasilkan **76 commit** — hampir
+seluruhnya positif palsu (lz4, zstd, UKSM, BPF testsuite, percpu-refcount yang
+kebetulan menyentuh berkas yang sama). Rantai sebenarnya 12.
+
+Tiga commit **sengaja dilewati** karena acroreiser menerapkannya lalu mencabutnya
+kembali — pola "jangan salin keadaan pertengahan branch" yang sama seperti
+prioritas RT psimon di §2:
+
+```
+ec0bfb9a56  vfs: restructure d_genocide()              dicabut 511e456230
+2db7b00c5f  vfs: reorganize dput() memory accesses     dicabut 6adb1d7706
+ebc76c0df3  vfs: use lockref "dead" flag ...           dicabut ed96d460b9
+```
+
+#### Dua adaptasi tangan
+
+**`fs/configfs/dir.c:399`** — satu pemanggil `->d_count` tertinggal setelah
+konversi. Dipakai accessor `d_count(d)` yang justru disediakan commit
+`51fe095f96` dalam rantai ini; acroreiser memakai `d_lockref.count` langsung.
+Configfs memang dibangun di sini — di-`select` oleh
+`drivers/usb/gadget/Kconfig:551`.
+
+**`drivers/usb/gadget/f_qdss.c`** — dan ini yang paling instruktif. Konversi
+dcache memperkenalkan sebuah **makro**:
+
+```
+include/linux/dcache.h:104   #define d_lock d_lockref.lock
+```
+
+`f_qdss.c` punya `static DEFINE_SPINLOCK(d_lock)` sendiri dan di-`#include`
+langsung ke `android.c` (`android.c:49`), jadi identifiernya tergantikan teks
+dan gagal kompilasi. 15 kemunculan diganti jadi `qdss_lock` — nama yang sama
+dengan yang acroreiser pakai untuk alasan yang sama.
+
+Yang penting dari kasus ini: itu **tabrakan NAMA, bukan pemakaian field**.
+`grep '->d_count'` tidak menemukannya, dan kompilasi bertahap `mm/ lib/ fs/`
+tidak mencakup `drivers/`. **Hanya build kernel PENUH yang menangkapnya.**
+
+#### Hasil di perangkat: benar, tapi tidak terasa
+
+```
+boot              g5bf23f3c698d, homescreen, WARN/BUG kernel 0
+/proc/kallsyms    lockref_get, lockref_get_not_zero, vmacache_find,
+                  vmacache_update semuanya hadir
+workingset        masih bekerja (refault 528371, activate 1622)
+find /system      866 ms dingin, 368 ms panas   <- patokan baru, belum ada
+                                                   pembanding dari kernel lama
+```
+
+**TIDAK ADA perbaikan jank yang terukur.** Uji quick settings metode identik:
+
+```
+                    janky     p90    p95    p99
+workingset (basis)  12,26%   61ms   77ms   125ms
++lockref jalan 1    11,42%   57ms   73ms   125ms
++lockref jalan 2    12,83%   61ms   77ms   125ms
+jalan 3             tidak sah (0 frame terekam)
+```
+
+Kedua hasil sah **mengapit** angka basis dan p99 identik di ketiganya. Sebaran
+antar-jalan lebih besar daripada selisih terhadap basis.
+
+⚠️ Pelajaran pengukuran: kalau hanya jalan 1 yang dijalankan dan dilaporkan,
+11,42% vs 12,26% akan terlihat seperti perbaikan. Jalan 2 membantahnya. **Untuk
+perubahan yang efeknya diperkirakan kecil, satu pengukuran tidak cukup** —
+jalankan sampai sebarannya terlihat.
+
+Ini sesuai perkiraan sebelum flash: lockref mempercepat penelusuran path saat
+banyak inti bersaing di dentry yang SAMA; pada empat inti dengan beban ringan
+efeknya kecil. vmacache mempercepat pencarian VMA per-thread, terasa pada proses
+dengan banyak mapping.
+
+**Disimpan karena benar secara struktural dan nol regresi, bukan karena
+menyelesaikan gejala.** Berbeda dari workingset (§3) yang p99-nya turun separuh.
+
 ---
 
 ## 5. Yang sengaja TIDAK dikerjakan
@@ -675,7 +794,9 @@ tidak".
 
 ---
 
-## 8. Urutan kerja
+## 8. Urutan kerja — SELURUHNYA SELESAI 31 Agustus 2026
+
+Rencana semula:
 
 ```
 0. Adiantum terbukti boot, /data diformat, dipakai beberapa hari   <- prasyarat
@@ -685,9 +806,44 @@ tidak".
 4. workingset + list_lru       setelah PSI, karena PSI jadi alat ukurnya
 ```
 
-Jangan menumpuk. Kalau semuanya masuk sekaligus lalu ada yang rusak, tidak akan
-ketahuan yang mana — pelajaran dari enam percobaan MTP/adb yang gagal
-berurutan (`PLAN-FBE.md` Fase 7).
+Yang benar-benar dikerjakan, berurutan:
+
+| | hasil | terukur |
+|---|---|---|
+| tabel kunci bersama DIRECT_KEY (§2b) | `bba732266c7c` | refcnt 3067 → 4 |
+| PSI (§2) | branch `psi`, `367e1f5c7d07` | `/proc/pressure/*` hidup, lmkd pindah |
+| workingset + list_lru (§3) | `2f85c1e8fdb4` | **p99 250ms → 125ms**, pgmajfault 115 → 10 |
+| lockref + vmacache (§4) | `d346f9cd9cfd` | tidak terukur — lihat §4 |
+
+Kedua branch utama kini memuat semuanya:
+
+```
+lineage-23   d346f9cd9cfd
+twrp-12.1    29cc5a6be0fe   (+ AIO FunctionFS, khusus recovery)
+```
+
+**Prinsip "jangan menumpuk" terbukti berharga.** Setiap lapisan di-flash dan
+diukur sendirian sebelum yang berikutnya, dan itulah yang membuat tabel di atas
+bisa ditulis sama sekali. Kalau keempatnya digabung sekaligus, satu-satunya yang
+bisa dikatakan adalah "lebih baik" atau "lebih buruk" tanpa tahu bagiannya yang
+mana — dan PSI yang gagal boot tiga kali akan jauh lebih sulit didiagnosis.
+
+### Yang tersisa, kalau nanti dilanjutkan
+
+Tidak ada yang mendesak. Kandidat yang sudah dinilai dan dicatat:
+
+```
+§7b  ZRAM crypto API + max_comp_streams   murah, terukur, belum dikerjakan
+§7c  kcompactd                            prioritas rendah, alasannya di sana
+§6   f2fs SB_CHKSUM                       satu langkah kecil kalau diinginkan
+§5   eBPF, userfaultfd, binder, schedutil ditolak berikut alasannya
+§7   EROFS                                ditolak
+§7c  MGLRU, memcg v2                      di luar jangkauan
+```
+
+Akar masalah yang tersisa bukan lagi soal backport: perangkat ini 1,9 GB untuk
+Android 16. workingset mengurangi pemborosan, PSI memperbaiki keputusan lmkd,
+tetapi tidak satu pun menambah memori.
 
 ---
 
