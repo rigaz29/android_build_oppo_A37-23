@@ -530,6 +530,151 @@ sumber perubahannya jadi kabur.
 
 ---
 
+## 7c. "Apakah a6010 lebih baru?" — tiga yang sudah diperiksa
+
+Diperiksa 31 Agustus 2026. Ketiganya pertanyaan serupa dengan jawaban berbeda;
+dicatat supaya tidak diperiksa ulang.
+
+### MGLRU — TIDAK ADA di keduanya, dan di luar jangkauan
+
+```
+lru_gen  LRU_GEN  MAX_NR_GENS  lrugen  min_seq  max_seq
+lru_gen_struct  MEMCG_NR_GENS        A37: 0    a6010: 0
+CONFIG_LRU_GEN di defconfig                0            0
+```
+
+(`walk_pmd_range` yang muncul 1 di keduanya adalah `mm/pagewalk.c:27` — fungsi
+lama, bukan MGLRU.)
+
+Di sini a6010 **tidak** lebih baru. MGLRU masuk mainline di 6.1, tapi yang
+menentukan bukan nomor versinya melainkan prasyaratnya:
+
+```
+struct folio  folio_nr_pages  page_folio  folio_lruvec
+                                     A37: 0    a6010: 0
+include/linux/mm_inline.h    A37 103    a6010 103    hulu 6.1 ~600 baris
+```
+
+MGLRU dibangun di atas **folio** (5.16+) — penggantian abstraksi halaman, bukan
+tambahan. Dan `struct lruvec` di sini masih bentuk paling awal (list + reclaim
+stat + zone); MGLRU menambahkan larik generasi, `min_seq`/`max_seq`, dan tabel
+Bloom ke dalamnya.
+
+Kelasnya berbeda dari EROFS. EROFS ditolak karena tembok `bvec_iter` — besar
+tapi terbatas pada satu subsistem I/O. MGLRU menuntut mengganti abstraksi
+halaman di **seluruh** kernel lebih dulu. Itu bukan backport; itu memindahkan
+kernel.
+
+Catatan yang layak diingat: pekerjaan `workingset` (§3) adalah **cikal bakal**
+MGLRU. Gagasan "kenali halaman yang baru dibuang lalu diminta lagi"
+diperkenalkan commit workingset 2013 yang kita pakai, lalu sembilan tahun
+kemudian digeneralisasi jadi banyak generasi di MGLRU. Jadi workingset bukan
+pengganti MGLRU yang lebih rendah — ia leluhurnya, dan satu-satunya bagian dari
+gagasan itu yang bisa jalan di 3.10.
+
+### memcg — SETARA; yang berbeda cgroup di bawahnya
+
+memcg sendiri sama-sama v1 di kedua pohon:
+
+```
+                          A37    a6010
+memory.low/high/max         0      0     <- knob v2
+dfl_cftypes                 0      0     <- pendaftaran v2
+memcg_kmem                 34     39
+memsw                      88     90
+swap_cgroup                14     14
+```
+
+Dan dari pohon mereka sendiri:
+
+```
+mm/memcontrol.c:7189   .legacy_cftypes = mem_cgroup_files,
+mm/memcontrol.c:7207   cgroup_add_legacy_cftypes(&memory_cgrp_subsys, ...)
+```
+
+`legacy_cftypes`, bukan `dfl_cftypes` — **pengendali memori mereka juga hanya
+terdaftar di cgroup v1.** Bedanya cuma penamaan (`mem_cgroup_subsys` vs
+`memory_cgrp_subsys`, rename hulu 3.16).
+
+cgroup di bawahnya memang berbeda:
+
+```
+                          A37                       a6010
+tata letak     kernel/cgroup.c (5536 baris)   kernel/cgroup/ (5 berkas)
+cgroup-defs.h  tidak ada                      688 baris
+cgroup2_fs_type            0                       1
+```
+
+⚠️ **Punya `cgroup2_fs_type` BUKAN berarti punya memcg v2.** Mereka bisa
+me-mount cgroup2, tetapi pengendali memorinya tidak tersedia di sana. Untuk yang
+benar-benar dipakai di perangkat ini — `/dev/memcg/memory.pressure_level`
+(`mm/memcontrol.c:6000` di pohon kita), akuntansi per-proses, `oom_score_adj` —
+**tidak ada beda fungsional**.
+
+Konsekuensi yang sudah terasa: ketiadaan `cgroup-defs.h` itulah alasan dukungan
+cgroup dibuang dari PSI (§2), dan `PLAN-PSI-EBPF.md` sudah lebih dulu mencatat
+ketiadaan cgroup v2 sebagai penghalang sebenarnya untuk eBPF. Jadi cgroup v2
+bukan fitur berdiri sendiri — ia prasyarat yang menghalangi dua hal sekaligus.
+
+Menaikkannya bukan hal kecil (penataan ulang `kernel/cgroup/`, `cgroup-defs.h`,
+seluruh pemakai `cgroup_subsys`), dan hasilnya **tidak langsung memberi apa
+pun** — memcg v2 tetap pekerjaan terpisah setelahnya, dan acroreiser sendiri
+tidak melakukannya.
+
+### Compaction / kcompactd — a6010 LEBIH BARU, tapi tidak relevan di sini
+
+```
+                    A37    a6010
+mm/compaction.c     1257   1476 baris
+kcompactd             0     16
+```
+
+Sisanya setara: `compact_control`, `migrate_pfn`, `free_pfn`,
+`compact_finished`, `__reset_isolation_suitable`, `COMPACT_PARTIAL`. Selisih
+~219 baris hampir seluruhnya kcompactd.
+
+Rantai di pohon mereka (12 sentuhan berkas, donor 3.10 matang):
+
+```
+0e2275db5264  BACKPORT: mm, compaction: introduce kcompactd        7 berkas
+235c265f45a2  BACKPORT: mm, kswapd: replace kswapd compaction      3
+322ef4c8f3ec  mm: wake kcompactd before kswapd's short sleep       1
+e3bb32df85aa  mm/compaction.c: fix zoneindex in kcompactd()        1
+f638af02603a  mm/compaction: Prioritize compaction work
+```
+
+**Tetapi angka perangkat membatalkan alasannya.** Setelah 2 jam 51 menit
+pemakaian nyata:
+
+```
+allocstall               103
+compact_stall              3
+compact_fail               0
+compact_success            0
+pgmigrate_success       3612
+compact_migrate_scanned 4669
+```
+
+Yang mudah salah dibaca: **`allocstall` bukan urusan kcompactd.** Itu menghitung
+alokasi yang masuk *direct reclaim* — penyebabnya RAM habis, bukan fragmentasi.
+Yang kcompactd kurangi adalah `compact_stall`, dan angkanya **3** dalam hampir
+tiga jam; ketiganya pun tidak berujung sukses maupun gagal, artinya
+ditunda/dilewati.
+
+Bandingkan dengan yang terukur besar:
+
+```
+compact_stall     3   dalam 2j51m               <- yang kcompactd perbaiki
+pgmajfault      115   dalam 5x buka quick settings  <- yang workingset perbaiki
+RAM bebas       168 MB dari 1887                <- akar keduanya
+```
+
+Fragmentasi bukan sumber lambatnya perangkat ini. **Prioritas rendah** — dicatat
+berikut alasannya supaya nanti tidak dikerjakan hanya karena "mereka punya, kita
+tidak".
+
+---
+
 ## 8. Urutan kerja
 
 ```
