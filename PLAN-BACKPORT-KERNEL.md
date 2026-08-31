@@ -137,6 +137,74 @@ dengan metode yang sama seperti sebelumnya.
 
 ---
 
+### SELESAI — 31 Agustus 2026, branch `psi` (`367e1f5c7d07`)
+
+```
+/proc/pressure/cpu     some avg10=72.80  total=45239951
+/proc/pressure/io      some avg10=11.36  full avg10=5.50
+/proc/pressure/memory  0 -> some total=1458600 setelah 1,2 GB
+                       ditulis-baca dengan cache dibuang
+[psimon] berjalan       dmesg nol WARNING/BUG/Oops
+```
+
+`ro.lmk.use_psi` masih `false` — lmkd belum memakainya. Sengaja dipisah.
+
+#### Yang dilewatkan perkiraan di atas
+
+Hitungan "1522 baris + kait di 10 berkas" benar untuk PSI-nya sendiri, tetapi
+**melewatkan seluruh lapisan pendukung**. PSI hulu memakai API yang tidak ada di
+3.10, dan acroreiser punya karena pohon mereka lebih dimodernkan secara
+keseluruhan:
+
+```
+kthread_delayed_work    shim di atas primitif 3.10
+wq_worker_last_func     backport dari 4.20
+jiffies_to_nsecs        pembantu kecil
+calc_load, calc_load_n, this_rq_lock, __task_rq_lock, __task_rq_unlock
+                        dibuka dari static di core.c
+PF_MEMSTALL             0x00000001, BUKAN 0x01000000 -- bit itu sudah
+                        dipakai PF_SPREAD_PAGE di pohon ini
+task_struct             psi_flags, sched_psi_wake_requeue
+```
+
+Inti `kthread_worker` 4.9 **tidak** diganti: strukturnya tidak kompatibel
+(menambah `delayed_work_list` dan `canceling`, membuang `kthread_work.done`) dan
+renamenya menyentuh 11 pemakai termasuk `drivers/gpu/msm/kgsl.c` dan
+`adreno_dispatch.c`.
+
+#### Tiga kegagalan boot, dan pelajarannya
+
+| | penyebab | sifat |
+|---|---|---|
+| 1 | `psi_disabled` di `.bss` = false; PSI hidup sebelum `psi_init()` | urutan |
+| 2 | `psi_init()` di `sched_init()`; 3.10 tak punya `workqueue_init_early()` | urutan |
+| 3 | shim `kthread_create_worker` balapan `worker->task` | semantik shim |
+
+**Tidak satu pun disebabkan lapisan yang kurang.** Nomor 1 dan 2 lahir dari
+perbedaan urutan inisialisasi 3.10 vs 4.x, yang tidak terlihat dari kode PSI dan
+hanya ketahuan dengan menjalankannya. Nomor 3 lahir karena shim ditulis dari
+"apa yang dibutuhkan pemanggil", bukan dari membaca implementasi aslinya sampai
+tuntas — perbandingan berdampingan langsung menunjukkan bahwa 4.9 mengisi
+`worker->task` SEBELUM `wake_up_process()`.
+
+Kesimpulannya untuk pekerjaan berikutnya: **tiru semantik dengan teliti, jangan
+bawa seluruh lapisan.** Modernisasi menyeluruh (jump_label baru, inti kthread
+4.9, cgroup-defs.h) akan menyentuh kode arch dan driver GPU, dan tidak akan
+mencegah nomor 1 maupun 2.
+
+#### Yang membuat diagnosis mungkin
+
+Perbaikan (1) yang membuat (2) terlihat. Sebelum itu kernel mati sebelum pstore
+hidup, sehingga `console-ramoops-0` hanya berisi sesi lama — nol informasi.
+Setelah PSI mulai dalam keadaan mati, kernel bertahan cukup lama untuk menulis
+`dmesg-ramoops` yang berisi backtrace sebenarnya.
+
+Untuk kerja kernel berikutnya di perangkat ini: **selalu periksa ramoops setelah
+kegagalan boot**, dan kalau ramoops kosong, itu sendiri sebuah petunjuk — artinya
+matinya sebelum pstore hidup, yaitu sangat awal.
+
+---
+
 ## 3. Prioritas 2 — `mm/workingset.c` + `mm/list_lru.c`
 
 Keduanya tidak ada di kita, ada di mereka. `list_lru` adalah prasyarat
