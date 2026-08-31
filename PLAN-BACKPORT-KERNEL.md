@@ -221,6 +221,96 @@ ada alat ukur sebelum mengubah perilaku reclaim.
 
 ---
 
+### DIKERJAKAN 31 Agustus 2026 — branch `workingset`, menunggu uji perangkat
+
+Perkiraan di atas ("dua berkas") **jauh meleset**, sama seperti PSI. Yang
+sebenarnya dibutuhkan:
+
+```
+41  commit rantai mm/filemap.c + truncate.c + radix-tree + workingset + list_lru
+ 1  adaptasi tangan (lru_add_pvecs -> lru_add_pvec, lihat di bawah)
+ 4  commit rantai shrinker API
+--
+46  commit di atas branch psi
+```
+
+#### Prasyarat yang tidak terlihat sampai dicoba
+
+```
+mm: cleanup add_to_page_cache_locked()
+mm + fs: prepare for non-page entries in page cache radix trees
+lib/radix-tree.c: radix_tree_node_alloc() within interrupt
+mm: remove lru parameter from __lru_cache_add
+mm: new shrinker API  (+ 3 lanjutan: nr_deferred, node awareness, per-node)
+```
+
+Yang terakhir menjelaskan sembilan galat kompilasi terakhir: `workingset.c`
+menuntut shrinker ber-NUMA (`SHRINKER_NUMA_AWARE`, `shrink_control.nid`,
+`count_objects`/`scan_objects`), sementara pohon ini masih bentuk `shrink` lama.
+
+#### Satu adaptasi tangan
+
+Cherry-pick `lru_add_pvecs -> lru_add_pvec` hanya **sebagian menempel**: badan
+`__lru_cache_add` terkonversi, tetapi deklarasi per-CPU, `lru_add_drain_cpu()`,
+`__pagevec_lru_add_fn()`, dan `__pagevec_lru_add()` tidak — baris di sekitarnya
+berbeda dari basis hulu. Hasilnya `get_cpu_var(lru_add_pvec)` berpasangan
+dengan `put_cpu_var(lru_add_pvecs)`.
+
+Keempat pembungkus `__pagevec_lru_add_{anon,active_anon,file,active_file}`
+**dipertahankan sebagai alias**, berbeda dari hulu yang membuangnya, supaya
+`fs/nfs/dir.c` dan `fs/cachefiles/rdwr.c` tetap bisa dibangun kalau suatu saat
+dinyalakan. Keduanya tidak ada di defconfig perangkat ini.
+
+#### Pemeriksaan konsistensi sebelum dikemas
+
+```
+truncate_inode_pages_final   semua fs yang dibangun sudah bentuk baru;
+                             ext4/ioctl.c dan kill_bdev() tetap bentuk lama --
+                             dan itu benar, keduanya bukan jalur eviction
+shrinker lama                masih dipanggil: struct shrinker menyimpan
+                             `shrink` DAN count/scan, dengan fallback lengkap
+                             di vmscan.c:250 dan :305. ext4/extents_status.c
+                             serta fs/super.c aman.
+```
+
+#### PELAJARAN METODE — ini yang paling penting dari seluruh seksi ini
+
+Percobaan pertama **gagal karena cara kerja saya, bukan karena patch-nya.** Saya
+menyelesaikan 12 blok konflik dengan skrip "ambil sisi hulu" tanpa membaca satu
+pun. Hasilnya: `add_to_page_cache_locked()` menjadi hibrida rusak (badan lama
+tergabung dengan potongan badan baru), dan `mm/Makefile` diam-diam merujuk
+`vmacache.o` yang berkasnya tidak ada di pohon ini.
+
+**Yang berbahaya: hasil itu kompilasi bersih.** Di PSI, kesalahan berarti tidak
+boot — langsung kelihatan. Di page cache, kesalahan berarti data rusak diam-diam.
+
+Cara yang benar, dan yang akhirnya dipakai:
+- baca **setiap** blok konflik, jangan pernah menyelesaikan otomatis
+- verifikasi tiap resolusi (`max_sane_readahead` tanpa pemanggil lain,
+  `vmacache.o` tanpa berkas, pembungkus pagevec dengan pemakai di fs yang tidak
+  dibangun)
+- kompilasi setelah **setiap** commit, bukan di akhir — supaya kerusakan
+  ketahuan di commit penyebabnya
+
+#### Status
+
+Kernel terbangun, `workingset.o` dan `list_lru.o` terkompilasi, simbol
+`workingset_eviction`/`refault`/`activation` dan `list_lru_add`/`del` hadir,
+tiga penghitung baru di vmstat. **Belum diuji di perangkat.**
+
+Yang harus diperiksa setelah flash — boot saja belum cukup:
+
+```
+/proc/vmstat  workingset_refault, workingset_activate, workingset_nodereclaim
+              harus BERGERAK setelah dipakai, bukan tetap nol
+dmesg         nol WARN/BUG tingkat kernel
+```
+
+Kalau ketiga penghitung itu tetap nol, artinya deteksi refault tidak bekerja
+walau kernelnya boot.
+
+---
+
 ## 2b. Tabel kunci bersama untuk DIRECT_KEY — sekarang ada angkanya
 
 Ditambahkan 31 Agustus 2026, setelah Adiantum berjalan di perangkat.
@@ -350,6 +440,93 @@ Kalau ruang `/system` benar-benar jadi masalah, urutannya: ukur sisanya dulu,
 lalu bandingkan squashfs (`fs/squashfs` sudah ada di pohon kita, 17 berkas,
 tinggal dinyalakan) versus membuang muatan yang tidak terpakai. Dua-duanya jauh
 lebih murah.
+
+---
+
+## 7b. ZRAM + zsmalloc — dibandingkan, belum dikerjakan
+
+Dicatat 31 Agustus 2026. Perbandingan langsung terhadap pohon acroreiser.
+
+### zsmalloc: SETARA, tidak ada yang bisa diambil
+
+```
+                    A37      a6010
+mm/zsmalloc.c       1947     1942 baris
+zs_compact           7         7
+zs_page_migrate      0         0
+migrate_lock         0         0
+```
+
+Keduanya di tingkat ~4.1 (kompaksi sudah ada), dan **keduanya sama-sama belum
+punya migrasi halaman zsmalloc** (fitur 4.8). Tidak ada donor untuk ini; kalau
+suatu saat diinginkan, harus dari mainline.
+
+### zram: acroreiser satu generasi di depan
+
+```
+                       A37                        a6010
+model backend          zcomp_lzo.c/zcomp_lz4.c    crypto_alloc_comp
+model stream           zcomp_strm_multi/single    per-CPU + CPU notifier
+                       + max_comp_streams
+algoritma tersedia     lzo, lz4                   lzo, lz4, lz4kd,
+                                                  (zstd/deflate bila dinyalakan)
+pustaka pendukung      lib/lz4                    lib/lz4, lib/lz4kd, lib/zstd
+```
+
+Kita masih model backend statis (era 3.15-4.6); mereka sudah crypto API (4.9+).
+Konsekuensi nyata: kita **hanya** bisa `lzo` dan `lz4`, karena algoritma
+ditentukan oleh berkas backend yang dikompilasi. Mereka bisa menambah algoritma
+lewat crypto API tanpa menyentuh zram sama sekali.
+
+Yang **tidak** dimiliki keduanya: `writeback` -- menulis halaman zram dingin ke
+penyimpanan. Nol kemunculan `backing_dev`/`writeback_limit`/`ZRAM_WB` di kedua
+pohon. Itu fitur 4.14.
+
+### Temuan paling praktis: max_comp_streams = 1
+
+Di model lama kita, itu berarti **satu stream kompresi dipakai bergantian oleh
+empat inti**. Di model per-CPU milik a6010 knob ini sudah tidak berarti -- tiap
+CPU dapat stream sendiri.
+
+Dan tidak bisa diubah saat berjalan; percobaan menulis 4 ditolak dan nilainya
+tetap 1:
+
+```
+drivers/block/zram/zram_drv.c:242
+	if (init_done(zram)) {
+		if (!zcomp_set_max_streams(zram->comp, num)) {
+			pr_info("Cannot change max compression streams\n");
+```
+
+Nilainya hanya bisa disetel **sebelum** `disksize` ditulis. Karena fstab
+menyalakan zram lewat `zramsize=` di baris swap, penyetelannya harus lebih dulu
+dari itu -- dan saat ini tidak ada satu pun berkas di ROM yang menyetelnya.
+
+### Rasio nyata di perangkat, sebagai patokan
+
+Diambil saat uptime beberapa menit dengan pemakaian ringan:
+
+```
+asli 83 MB -> terkompres 32 MB          rasio murni    2,57x
+memori zram terpakai 43 MB              rasio efektif  1,92x
+overhead zsmalloc 10,9 MB               34% di atas data terkompres
+```
+
+2,57x wajar untuk LZ4. Overhead 34% itu harga zsmalloc tanpa migrasi halaman --
+persis fitur 4.8 yang tidak dimiliki siapa pun.
+
+### Urutan kalau dikerjakan
+
+1. **`max_comp_streams` disetel sebelum init zram.** Nol perubahan kernel,
+   hanya urutan penyetelan di init. Paling murah, dan langsung mengatasi
+   serialisasi kompresi di 4 inti. Efeknya terukur dari `/sys/block/zram0`.
+2. **zram crypto API.** Membuka `lz4kd` (rasio lebih baik dari lz4 pada beban
+   Android) dan `zstd`. Perlu ikut membawa `lib/lz4kd` atau `lib/zstd`.
+3. **zsmalloc page migration.** Tidak ada donor; harus dari mainline.
+
+Nomor 1 layak lebih dulu: murah, bisa dibalik, dan terukur. Tapi jangan
+ditumpuk dengan perubahan kernel lain yang belum terbukti -- kalau digabung,
+sumber perubahannya jadi kabur.
 
 ---
 
