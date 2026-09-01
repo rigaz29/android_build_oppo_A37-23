@@ -154,8 +154,14 @@ for item in "${miss_list[@]}" "${drift_list[@]}"; do
     printf "  OK        %-24s %s\n" "$proj" "${base:0:48}"; applied=$((applied+1))
   else
     git -C "$R" am --abort >/dev/null 2>&1
-    if git -C "$R" apply -3 "$p" >/dev/null 2>&1 && ! git -C "$R" diff --check >/dev/null 2>&1 || \
-       git -C "$R" apply -3 "$p" >/dev/null 2>&1; then
+    # `apply -3` keluar !=0 dalam DUA keadaan yang berbeda: patch tidak bisa
+    # dipasang sama sekali, ATAU dipasang tetapi meninggalkan konflik. Keluar
+    # nol adalah satu-satunya tanda pemasangan yang benar-benar bersih.
+    #
+    # Syarat lama menuntut `diff --check` GAGAL (yakni ada galat spasi) supaya
+    # dianggap sukses, dan menjalankan `apply -3` dua kali. Akibatnya patch
+    # yang terpasang mulus justru dinilai gagal lalu dibatalkan.
+    if git -C "$R" apply -3 "$p" >/dev/null 2>&1; then
       subj=$(grep -m1 '^Subject:' "$p" | sed 's/^Subject: \[PATCH[^]]*\] //')
       [ -z "$subj" ] && subj="terapkan $base"
       git -C "$R" add -A >/dev/null 2>&1
@@ -165,7 +171,11 @@ Diterapkan dengan merge 3-arah oleh tools/patches.sh; konteks hulu bergeser.
 Sumber: ${p#"$PATCHDIR"/}" >/dev/null 2>&1
       printf "  OK(3way)  %-24s %s\n" "$proj" "${base:0:48}"; applied=$((applied+1))
     else
-      git -C "$R" checkout -- . >/dev/null 2>&1
+      # `checkout -- .` tidak cukup: ia tidak membuang entri unmerged di index,
+      # sehingga penanda <<<<<<< yang ditulis `apply -3` tertinggal di pohon.
+      # Terjadi 1 September 2026 di hardware/qcom-caf/bt, dan kerusakannya baru
+      # terlihat sebagai galat kompilasi yang tampak tak berhubungan.
+      git -C "$R" reset --hard HEAD >/dev/null 2>&1
       printf "  GAGAL     %-24s %s\n" "$proj" "${base:0:48}"; n_fail=$((n_fail+1))
     fi
   fi
