@@ -485,6 +485,11 @@ menyelesaikan gejala.** Berbeda dari workingset (§3) yang p99-nya turun separuh
 
 ## 6. f2fs — sudah mentok, sumber murah habis
 
+> **Diperbarui 1 September 2026.** Kesimpulan seksi ini benar untuk **acroreiser
+> sebagai sumber**, dan tetap berlaku. Yang berubah: langkah lanjut yang
+> disebut di bawah — "mengambil langsung dari mainline dan mengadaptasi
+> sendiri" — sudah dikerjakan. Lihat **seksi 6c**.
+
 ```
 A37 lineage-23 (asli LineageOS)   908 commit fs/f2fs
 A37 adiantum   (setelah backport) 1071
@@ -533,6 +538,174 @@ Pelajarannya untuk rencana ke depan: **menaikkan versi f2fs kernel tidak
 otomatis menaikkan fitur.** Yang menentukan fitur adalah mkfs, dan mkfs kita
 sudah lebih baru. Memakai fitur baru berarti mengubah cara format — artinya wipe
 lagi.
+
+---
+
+## 6b. ext4 + jbd2 dari acroreiser — SELESAI 1 September 2026, digabung ke `lineage-23` (`69a4a9b6e028`)
+
+Seksi 6 di atas menutup f2fs dengan kesimpulan "acroreiser sudah sejajar".
+Untuk ext4 keadaannya berbeda: acroreiser **jauh di depan** kita.
+
+`/cache`, `/persist`, dan `/system` di perangkat ini ext4, dan `fstab.qcom`
+punya jalur cadangan ext4 untuk `/data` — jadi ini bukan kode mati.
+
+### Yang diambil: 70 commit
+
+```
+59  fs/ext4/          dari acroreiser (tag archive/lineage-19.1-acroreiser)
+ 5  fs/jbd2/          jurnal ext4, pasangan langsungnya
+ 4  fs/quota/         inti quota, prasyarat project quota
+ 3  dependensi hulu   find_inode_nowait (v4.2), mbcache2 (v4.6), nospec.h (v4.16)
+```
+
+Fitur berhenti di **v4.5** (project quota / project ID, seri Li Xi Januari 2016);
+perbaikan berlanjut sampai **v5.14**. Diverifikasi bukan lewat tanggal melainkan
+uji keterjangkauan ke tag rilis mainline (`compare/<tag>...<sha>`).
+
+`CONFIG_QUOTA=y` dan `CONFIG_QFMT_V2=y` sudah aktif, jadi project quota tidak
+butuh perubahan konfigurasi.
+
+### Empat yang DITOLAK, dan alasannya
+
+**`Revert "fs: ext4: disable support for fallocate FALLOC_FL_PUNCH_HOLE"`.**
+acroreiser membalikkan mitigasi Google `Bug: 28760453` = **CVE-2015-8839**
+(korupsi data akibat balapan punch-hole vs page fault) **tanpa satu kata
+penjelasan** — badan commit-nya kosong. Diperiksa: `i_mmap_sem` nihil di seluruh
+`fs/ext4/` mereka, artinya seri perbaikan Jan Kara tidak ada. Membalikkannya
+membuka kembali kerentanan tanpa penambal.
+
+**`ext4: pass inode pointer instead of file pointer to punch hole`.** Hanya
+berguna kalau punch hole aktif. Ikut ditinggalkan.
+
+**`fs: ext4: use e/frandom, do not deplete entropy`.** Lolos saring judul karena
+berawalan `fs: ext4:`, tapi ini tweak lokal acroreiser: mengganti
+`get_random_bytes()` dengan RNG pihak ketiga dari `drivers/char/frandom.c` yang
+tidak kita punya. Bukan kode hulu.
+
+**`import`.** Commit genesis pohon acroreiser: 46.948 berkas, 19.591.416 baris.
+
+### Audit mainline: sudah tidak ada yang bernilai
+
+92 patch mainline diuji dengan `git apply --check` — 17 kandidat dari
+penelusuran CVE, 75 dari berkas yang relevan dengan fitur kita
+(`extents.c`, `namei.c`, `mballoc.c`, `balloc.c`, `ialloc.c`), jendela 2021-06
+sampai 2024-01, konversi folio dibuang.
+
+**8 terap bersih, tidak satu pun berpengaruh di perangkat ini.** Bukti penentunya
+`tune2fs -l`:
+
+```
+/cache   128 MB, inode 128: has_journal ext_attr resize_inode dir_index filetype
+                            needs_recovery extent flex_bg sparse_super large_file
+                            huge_file uninit_bg dir_nlink extra_isize
+/persist  32 MB, inode 256: has_journal ext_attr resize_inode filetype
+                            needs_recovery extent sparse_super large_file uninit_bg
+```
+
+Tidak ada `inline_data` → 3 patch `inline.c` tak terjangkau. Tidak ada
+`bigalloc` → `EXT4_C2B()` identitas, 2 patch satuan mballoc jadi no-op. Sisa 3
+hanya pembuangan kode mati.
+
+CVE yang ditelusuri dan **tidak berlaku**: CVE-2023-52625 (pola pre-alokasi
+es1/es2 v6.5 belum ada; `es1` di pohon kita cuma variabel lokal),
+CVE-2021-33631 dan CVE-2022-49414 (jalur `inline_data`), CVE-2023-52622 dan
+CVE-2024-35807 (online resize — Android tidak pernah menjalankan `resize2fs`
+pada partisi tetap).
+
+---
+
+## 6c. f2fs dari mainline — DIKERJAKAN 1 September 2026, branch `f2fs-fixes` (`c4e079360db3`)
+
+Seksi 6 menutup f2fs terhadap **acroreiser** sebagai sumber, dan menulis:
+"Lanjut berarti mengambil langsung dari mainline dan mengadaptasi sendiri."
+Seksi ini adalah pekerjaan itu.
+
+Ini lebih relevan daripada ext4: `/data` memakai f2fs dengan Adiantum FBE, dan
+di-mount dengan `inline_xattr` serta `extent_cache` — dua hal yang disentuh
+langsung oleh beberapa patch di bawah.
+
+### Metode
+
+Posisi kita **v4.15**, terpin dari fitur superblok: berhenti di `QUOTA_INO`
+(0x0080), `LOST_FOUND` (v4.16) sudah tidak ada.
+
+```
+562  commit fs/f2fs mainline 2018-01 s/d 2021-01
+229  setelah disaring jenis perbaikan; fitur yang kita tak punya dibuang
+     (compression, casefold, verity, checkpoint=disable, zoned, ATGC)
+ 29  terap bersih  <- ketiganya-ratus-dua-puluh-sembilan diuji satu per satu
+ 19  substantif (10 sisanya kosmetik: typo komentar, show_options, kode mati)
+ 18  akhirnya diterapkan
+```
+
+### Satu dari 19 dibuang
+
+`f2fs: fix to drop meta/node pages during umount` — seluruh badannya dijaga
+`SBI_CP_DISABLED`, flag dari fitur `checkpoint=disable` (v4.19) yang tidak kita
+punya dan tidak pernah diset. Kode mati.
+
+### Tiga penyesuaian tangan
+
+Dua pertama akibat penyeragaman awalan `f2fs_` yang baru dilakukan hulu di
+**v4.20**, sedangkan pohon kita v4.15:
+
+```
+f2fs_update_inode()     -> update_inode()      dir.c, inline.c
+f2fs_check_nid_range()  -> check_nid_range()   node.c  (signature identik, f2fs.h:1639)
+```
+
+Yang ketiga jauh lebih penting. **Hunk kedua `2c28aba8b2e2` mendarat di fungsi
+yang salah.** Ia semestinya di akhir `__find_inline_xattr()`, tapi `git am`
+menempelkannya di akhir `__find_xattr()` karena konteks kedua fungsi mirip.
+
+Ini persis kelas kesalahan yang dicatat di seksi 2 (PELAJARAN METODE):
+**terap bersih tapi salah secara semantik.** Kali ini kompilasi menangkapnya
+karena `max_addr` dan `last_addr` tidak ada di fungsi tujuan yang keliru — kalau
+nama variabelnya kebetulan cocok, ia akan lolos diam-diam dan merusak pencarian
+xattr inline.
+
+Aturan yang menyusul dari sini: **`git am` yang sukses bukan bukti.** Untuk
+patch yang menyentuh fungsi bersaudara dengan struktur mirip, periksa hunk
+mendarat di fungsi yang benar sebelum percaya.
+
+### ⚠️ Kejujuran yang harus ikut tercatat
+
+**Tidak satu pun dari 29 patch itu bertanda `Cc: stable@`.** Semuanya perbaikan
+nyata, tapi tidak ada yang dinilai hulu cukup parah untuk masuk pohon stable.
+Jangan berharap perubahan yang terasa di pemakaian.
+
+Dan peringatan di seksi 6 tetap berlaku sepenuhnya: bug f2fs muncul sebagai
+korupsi diam-diam berminggu-minggu kemudian, di tempat data pengguna tinggal.
+
+Kenapa 200 sisanya gagal terap: bergantung pada refaktor antara v4.15 dan
+versinya masing-masing — persis rombakan struktur yang dihindari.
+
+### Verifikasi
+
+Dikerjakan di worktree terpisah (`/root/kernel-f2fs`) supaya build ROM yang
+sedang berjalan tidak mengambil sumber yang berubah di tengah jalan.
+
+```
+Image 18.529.720 B, kernel penuh terbangun
+blok IS_XATTR_LAST_ENTRY: 1 di __find_inline_xattr, 0 di __find_xattr
+System.map masih memuat psi_init, workingset_refault, lockref_get,
+  adiantum_tmpl, iris_probe, ext4_get_projid, mb2_cache_create
+```
+
+**BELUM digabung ke `lineage-23` dan belum diuji di perangkat.** Sengaja: ROM
+yang sedang dibangun hanya membawa ext4, supaya kalau ada masalah variabelnya
+tunggal.
+
+### Temuan sampingan yang lebih mahal daripada pekerjaannya
+
+Saat membuat worktree, ketahuan pohon kernel utama **detached HEAD di
+`d25141dda94b` — tanpa backport ext4**. `repo sync -l` yang mengembalikannya ke
+revisi manifest. Kalau tidak ketahuan, build ROM berjam-jam itu akan
+menghasilkan kernel lama tanpa satu pun galat yang mencurigakan.
+
+Aturannya: **setelah `repo sync` apa pun, periksa ulang HEAD tiap proyek yang
+punya commit lokal.** Ini kedua kalinya `repo sync -l` menimbulkan detached HEAD
+di sesi ini.
 
 ---
 
@@ -833,12 +1006,16 @@ mana — dan PSI yang gagal boot tiga kali akan jauh lebih sulit didiagnosis.
 Tidak ada yang mendesak. Kandidat yang sudah dinilai dan dicatat:
 
 ```
-§7b  ZRAM crypto API + max_comp_streams   murah, terukur, belum dikerjakan
-§7c  kcompactd                            prioritas rendah, alasannya di sana
-§6   f2fs SB_CHKSUM                       satu langkah kecil kalau diinginkan
-§5   eBPF, userfaultfd, binder, schedutil ditolak berikut alasannya
-§7   EROFS                                ditolak
-§7c  MGLRU, memcg v2                      di luar jangkauan
+§6c  merge f2fs-fixes ke lineage-23        SIAP, menunggu uji perangkat
+§7b  ZRAM crypto API + max_comp_streams    murah, terukur, belum dikerjakan
+§7c  kcompactd                             prioritas rendah, alasannya di sana
+§6   f2fs SB_CHKSUM                        satu langkah kecil kalau diinginkan
+§6c  10 patch f2fs kosmetik                sisa dari 29 yang terap bersih
+§5   eBPF, userfaultfd, binder, schedutil  ditolak berikut alasannya
+§7   EROFS                                 ditolak
+§6b  ext4 dari mainline                    HABIS -- 8 dari 92 terap bersih,
+                                           nol yang terjangkau di perangkat ini
+§7c  MGLRU, memcg v2                       di luar jangkauan
 ```
 
 Akar masalah yang tersisa bukan lagi soal backport: perangkat ini 1,9 GB untuk
