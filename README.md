@@ -9,6 +9,7 @@ Fase 1 (menyiapkan pohon) sedang berjalan.
 | Berkas | Isi |
 |---|---|
 | [`PLAN-LOS23.md`](PLAN-LOS23.md) | Dokumen utama. Rencana kernel wajib/opsional, userspace, device tree, 8 fase kerja |
+| [`RILIS.md`](RILIS.md) | Membangun ROM rilis: kunci penandatanganan, jebakan `testkey.x509.pem`, kenapa varian `user` tidak bisa boot, `-j4` dan ruang disk |
 | `analysis/kernel-22.2-to-23.2.txt` | 167 commit kernel a6010 dari `lineage-22.2` ke `lineage-23.2` |
 | [`A37-23.xml`](A37-23.xml) | Local manifest LOS 23.2. 8 `remove-project`, 16 project, 14 linkfile — sudah divalidasi parser XML dan diuji `repo manifest` |
 
