@@ -174,7 +174,10 @@ if [ $FOREGROUND -eq 1 ]; then
   exit "${PIPESTATUS[0]}"
 fi
 
-setsid nohup bash -c "$RUN > '$LOG' 2>&1" >/dev/null 2>&1 </dev/null &
+# Redirect HARUS di luar `bash -c`. Kalau ditaruh di dalam string $RUN, ia
+# hanya mengenai perintah TERAKHIR dalam rangkaian, bukan seluruhnya, dan
+# keluaran build terbuang diam-diam. Terjadi 4 September 2026.
+setsid nohup bash -c "$RUN" > "$LOG" 2>&1 </dev/null &
 disown
 echo "  dilepas ke latar (setsid), tahan terhadap sesi yang tertutup."
 echo
