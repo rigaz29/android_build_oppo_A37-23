@@ -11,7 +11,23 @@ Fase 1 (menyiapkan pohon) sedang berjalan.
 | [`PLAN-LOS23.md`](PLAN-LOS23.md) | Dokumen utama. Rencana kernel wajib/opsional, userspace, device tree, 8 fase kerja |
 | [`RILIS.md`](RILIS.md) | Membangun ROM rilis: kunci penandatanganan, jebakan `testkey.x509.pem`, kenapa varian `user` tidak bisa boot, `-j4` dan ruang disk |
 | `analysis/kernel-22.2-to-23.2.txt` | 167 commit kernel a6010 dari `lineage-22.2` ke `lineage-23.2` |
+| [`tools/sync.sh`](tools/sync.sh) | `repo sync` yang mencadangkan dulu setiap commit lokal, dan menandai mana yang tidak tercakup `patches/` |
+| [`tools/patches.sh`](tools/patches.sh) | Periksa dan terapkan `patches/` sesudah sync |
+| [`tools/build.sh`](tools/build.sh) | Build dengan penjaga: `-j` turun sendiri saat build penuh, kelengkapan kunci, ruang disk |
 | [`A37-23.xml`](A37-23.xml) | Local manifest LOS 23.2. 8 `remove-project`, 16 project, 14 linkfile — sudah divalidasi parser XML dan diuji `repo manifest` |
+
+## Urutan kerja
+
+```sh
+tools/sync.sh              # cadangkan commit lokal, lalu repo sync
+tools/patches.sh --apply   # pasang ulang 60 patch yang dibuang sync
+tools/build.sh             # bangun; --check-only untuk memeriksa kesiapan saja
+```
+
+Urutan ini tidak boleh ditukar. `repo sync --force-sync` membuang commit
+lokal tanpa peringatan; pada 1 September 2026 hal itu menghapus 47 dari 61
+patch dan kerusakannya baru ketahuan lewat lima kegagalan build berturut-turut
+yang seluruhnya salah didiagnosis.
 
 ## Tiga temuan yang membentuk seluruh rencana
 
