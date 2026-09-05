@@ -1,0 +1,131 @@
+From 304f1790ac95081137303e920ae9a5fa99f6227a Mon Sep 17 00:00:00 2001
+From: rigaz29 <lambatgarry@gmail.com>
+Date: Sat, 5 Sep 2026 11:26:09 +0000
+Subject: [PATCH] A37: build 64-bit -- TARGET_ARCH arm64 dengan arsitektur
+ kedua arm
+
+Userspace pindah ke arm64. Kernel TIDAK berubah: TARGET_KERNEL_ARCH sudah arm64
+sejak awal dan selama ini menjalankan userspace 32-bit lewat compat layer.
+
+Arsitektur kedua arm wajib ada karena blob kamera msm8916 hanya tersedia 32-bit.
+Qualcomm tidak pernah merilis HAL kamera 64-bit untuk SoC ini, dan ROM LOS 17.1
+64-bit A37 pun menjalankannya sebagai proses 32-bit. Vendor tree cabang
+lineage-23-64bit membawa 114 pustaka di vendor/lib64 dan 160 yang tetap di
+vendor/lib, 121 di antaranya kamera.
+
+Paket kamera pindah ke varian _32. Komentar di device.mk sebelumnya mencatat
+bahwa varian itu "hanya berarti compile_multilib 32 untuk platform 64-bit
+berblob 32-bit (Mi-Thorium)" dan A37 tidak membutuhkannya karena murni 32-bit.
+Sejak TARGET_ARCH := arm64, A37 persis menjadi kasus itu. Definisinya sudah ada
+di hardware/lineage/interfaces/camera/aidl/provider/Android.bp:38 dengan
+compile_multilib: "32" dan init_rc-nya sendiri, jadi infrastrukturnya tidak
+perlu dibuat.
+
+lineage_A37.mk mewarisi core_64_bit.mk untuk init.zygote64.rc,
+init.zygote64_32.rc, dan ro.zygote=zygote64_32 -- zygote 64-bit dengan anak
+32-bit.
+
+Terverifikasi lewat get_build_var setelah lunch:
+
+  TARGET_ARCH        arm64        TARGET_2ND_ARCH     arm
+  TARGET_CPU_ABI     arm64-v8a    TARGET_2ND_CPU_ABI  armeabi-v7a
+  TARGET_KERNEL_ARCH arm64        ro.zygote           zygote64_32
+  paket kamera       android.hardware.camera.provider-service_32.lineage
+
+Cabang lineage-23 tidak disentuh; ROM 32-bit tetap bisa dibangun dengan
+berpindah cabang di device tree dan vendor.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ BoardConfig.mk | 24 ++++++++++++++++++++----
+ device.mk      | 12 ++++++++----
+ lineage_A37.mk |  7 +++++++
+ 3 files changed, 35 insertions(+), 8 deletions(-)
+
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index c4f1d0d9..99b83cf1 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -155,13 +155,29 @@ BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
+ BOARD_PROPERTY_OVERRIDES_SPLIT_ENABLED := true
+ 
+ # Architecture
+-TARGET_BOARD_SUFFIX := _32
+-TARGET_ARCH := arm
++#
++# BUILD 64-BIT. Userspace arm64 dengan arsitektur kedua arm, karena blob kamera
++# msm8916 hanya ada 32-bit: Qualcomm tidak pernah merilis HAL kamera 64-bit
++# untuk SoC ini, dan ROM LOS 17.1 64-bit A37 pun menjalankannya sebagai proses
++# 32-bit. Vendor tree cabang lineage-23-64bit membawa 114 pustaka di
++# vendor/lib64 dan 160 yang tetap di vendor/lib.
++#
++# Kernel TIDAK berubah: TARGET_KERNEL_ARCH sudah arm64 sejak awal (baris 334),
++# dan selama ini menjalankan userspace 32-bit lewat compat layer.
++TARGET_BOARD_SUFFIX := _64
++TARGET_ARCH := arm64
+ TARGET_ARCH_VARIANT := armv8-a
+-TARGET_CPU_ABI := armeabi-v7a
+-TARGET_CPU_ABI2 := armeabi
++TARGET_CPU_ABI := arm64-v8a
+ TARGET_CPU_VARIANT := cortex-a53
+ 
++TARGET_2ND_ARCH := arm
++TARGET_2ND_ARCH_VARIANT := armv8-a
++TARGET_2ND_CPU_ABI := armeabi-v7a
++TARGET_2ND_CPU_ABI2 := armeabi
++TARGET_2ND_CPU_VARIANT := cortex-a53
++
++TARGET_SUPPORTS_64_BIT_APPS := true
++
+ # Binder
+ # TARGET_USES_64_BIT_BINDER DIBUANG di LOS 21 — build/make memperingatkan
+ # "has been deprecated. All devices use 64-bit binder by default now."
+diff --git a/device.mk b/device.mk
+index 51227e47..a020984a 100644
+--- a/device.mk
++++ b/device.mk
+@@ -562,15 +562,19 @@ PRODUCT_COPY_FILES += \
+ # tangkap log cameraserver + vendor.camera.provider saat gagal -- itu jawaban
+ # yang tidak pernah didapat pada 20260803.
+ #
+-# Varian tanpa akhiran _32 yang dipakai: _32 hanya berarti compile_multilib 32
+-# untuk platform 64-bit berblob 32-bit (Mi-Thorium). A37 TARGET_ARCH=arm murni
+-# 32-bit, sama seperti a6010.
++# BUILD 64-BIT: varian _32 yang dipakai. Sejak TARGET_ARCH := arm64, A37 persis
++# menjadi kasus yang dimaksud -- platform 64-bit berblob kamera 32-bit, sama
++# seperti Mi-Thorium. Definisinya ada di
++# hardware/lineage/interfaces/camera/aidl/provider/Android.bp:38, dengan
++# compile_multilib: "32" dan init_rc-nya sendiri.
++#
++# Kalau kembali ke build 32-bit, kembalikan ke varian tanpa _32.
+ #
+ # CARA MENGEMBALIKAN kalau gagal: kembalikan paket ini ke
+ # android.hardware.camera.provider@2.4-impl DAN kembalikan blok HIDL
+ # android.hardware.camera.provider di manifest.xml (lihat riwayat git).
+ PRODUCT_PACKAGES += \
+-    android.hardware.camera.provider-service.lineage \
++    android.hardware.camera.provider-service_32.lineage \
+     camera.device@1.0-impl \
+     libshim_camera \
+     libshim_camera_sensor \
+diff --git a/lineage_A37.mk b/lineage_A37.mk
+index 142a73e6..67fd197b 100644
+--- a/lineage_A37.mk
++++ b/lineage_A37.mk
+@@ -131,6 +131,13 @@ PRODUCT_COPY_FILES += \
+ endif
+ 
+ # Inherit from those products. Most specific first.
++#
++# BUILD 64-BIT: core_64_bit.mk menyediakan init.zygote64.rc,
++# init.zygote64_32.rc, dan ro.zygote=zygote64_32 -- zygote 64-bit dengan anak
++# 32-bit, yang dibutuhkan karena HAL kamera msm8916 hanya ada 32-bit.
++# Ia juga menyetel TARGET_SUPPORTS_32_BIT_APPS dan _64_BIT_APPS.
++# Buang baris ini kalau kembali ke build 32-bit.
++$(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit.mk)
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/product_launched_with_l.mk)
+ $(call inherit-product, device/oppo/A37/device.mk)
+-- 
+2.43.0
+
