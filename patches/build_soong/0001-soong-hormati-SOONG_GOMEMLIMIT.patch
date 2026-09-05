@@ -1,0 +1,19 @@
+diff --git a/ui/build/soong.go b/ui/build/soong.go
+index c9b303c5b..23e426042 100644
+--- a/ui/build/soong.go
++++ b/ui/build/soong.go
+@@ -226,6 +226,14 @@ func (pb PrimaryBuilderFactory) primaryBuilderInvocation(config Config) bootstra
+ 
+ 	commonArgs = append(commonArgs, "-l", filepath.Join(pb.config.FileListDir(), "Android.bp.list"))
+ 	invocationEnv := make(map[string]string)
++	// A37: soong_build dijalankan dengan `env -i`, sehingga GOMEMLIMIT dari luar
++	// tidak pernah sampai. Pada build 64-bit (dua arsitektur) ia mencapai RSS
++	// 10,9 GB di mesin 11 GB dan dibunuh OOM killer. Go default GOGC=100
++	// membiarkan heap tumbuh 2x live heap sebelum GC, jadi membatasi lewat
++	// GOMEMLIMIT menekan puncaknya tanpa mengurangi kerja yang dilakukan.
++	if v := os.Getenv("SOONG_GOMEMLIMIT"); v != "" {
++		invocationEnv["GOMEMLIMIT"] = v
++	}
+ 	if pb.debugPort != "" {
+ 		//debug mode
+ 		commonArgs = append(commonArgs, "--delve_listen", pb.debugPort,
