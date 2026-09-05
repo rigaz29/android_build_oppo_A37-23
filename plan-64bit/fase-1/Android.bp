@@ -1,0 +1,90 @@
+// Automatically generated file. DO NOT MODIFY
+//
+// Vendor tree A37 untuk build 64-bit (TARGET_ARCH := arm64).
+//
+// libloc_api_v02, libloc_ds_api, dan libtime_genoff naik ke vendor/lib64.
+// libTimeService dan TimeService dihapus: keduanya tidak ada di
+// proprietary-files.txt LOS 23.2, jadi tidak ikut dibawa.
+//
+// check_elf_files: false dipertahankan -- blob berasal dari Android 10 dan
+// sebagian dependensinya tidak lengkap di pohon 23.2.
+
+cc_prebuilt_library_shared {
+	name: "libloc_api_v02",
+	owner: "oppo",
+	strip: {
+		none: true,
+	},
+	target: {
+		android_arm64: {
+			srcs: ["proprietary/vendor/lib64/libloc_api_v02.so"],
+		},
+	},
+	compile_multilib: "64",
+	check_elf_files: false,
+	prefer: true,
+	soc_specific: true,
+}
+
+cc_prebuilt_library_shared {
+	name: "libloc_ds_api",
+	owner: "oppo",
+	strip: {
+		none: true,
+	},
+	target: {
+		android_arm64: {
+			srcs: ["proprietary/vendor/lib64/libloc_ds_api.so"],
+		},
+	},
+	compile_multilib: "64",
+	check_elf_files: false,
+	prefer: true,
+	soc_specific: true,
+}
+
+cc_prebuilt_library_shared {
+	name: "libtime_genoff",
+	owner: "oppo",
+	strip: {
+		none: true,
+	},
+	target: {
+		android_arm64: {
+			srcs: ["proprietary/vendor/lib64/libtime_genoff.so"],
+		},
+	},
+	compile_multilib: "64",
+	check_elf_files: false,
+	prefer: true,
+	soc_specific: true,
+}
+
+android_app_import {
+	name: "qcrilmsgtunnel",
+	owner: "oppo",
+	apk: "proprietary/priv-app/qcrilmsgtunnel/qcrilmsgtunnel.apk",
+	certificate: "platform",
+	dex_preopt: {
+		enabled: false,
+	},
+	privileged: true,
+}
+
+android_app_import {
+	name: "shutdownlistener",
+	owner: "oppo",
+	apk: "proprietary/vendor/app/shutdownlistener/shutdownlistener.apk",
+	certificate: "platform",
+	dex_preopt: {
+		enabled: false,
+	},
+	soc_specific: true,
+}
+
+dex_import {
+	name: "imscmlibrary",
+	owner: "oppo",
+	jars: ["proprietary/vendor/framework/imscmlibrary.jar"],
+	soc_specific: true,
+}
