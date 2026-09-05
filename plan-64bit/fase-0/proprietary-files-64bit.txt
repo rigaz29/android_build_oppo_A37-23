@@ -1,0 +1,434 @@
+# IMS -abhishek_hex-edit 
+vendor/lib64/libimscamera_jni.so
+vendor/lib64/libimsmedia_jni.so
+# ims.apk DIBUANG: menjatuhkan proses com.android.phone 45 kali dalam satu
+# jendela log.
+#   E AndroidRuntime: Process: com.android.phone
+#   FATAL EXCEPTION: main
+#   java.lang.IllegalAccessError: Method 'void java.lang.System.arraycopy(
+#     byte[], int, byte[], int, int)' is inaccessible to class
+#     'org.codeaurora.ims.ImsSenderRxr'
+#     at org.codeaurora.ims.ImsService.onCreate(ImsService.java:188)
+# Overload itu private di Android 11 (libcore .../java/lang/System.java:515,
+# "Do not remove or change the signature" — disimpan hanya untuk jalur
+# intrinsik runtime), sedangkan APK ini dibangun untuk Android 5.1 saat masih
+# bisa diakses. Tidak bisa diperbaiki tanpa mengompilasi ulang APK-nya.
+# ImsService-nya berjalan DI DALAM proses com.android.phone, jadi setiap crash
+# menjatuhkan telepon, bukan sekadar dirinya sendiri.
+# Tumpukan IMS memang sudah mati sejak ketiga daemonnya dibuang (64-bit di ROM
+# 32-bit), jadi APK ini crash berulang untuk sesuatu yang tidak bisa berfungsi.
+# imscmlibrary.jar + imscm.xml + 15 library lib-ims* dibiarkan: inert, tidak
+# dieksekusi siapa pun setelah APK-nya hilang.
+
+# Radio IMS
+# Ketiga daemon IMS DIBUANG: ber-ELF 64-bit dengan interpreter
+# /system/bin/linker64, sedangkan ROM ini TARGET_ARCH := arm / armeabi-v7a dan
+# hanya punya /system/bin/linker 32-bit. Jadi tidak akan pernah bisa
+# dieksekusi — init hanya mengulang tiap 5 detik selamanya:
+#   E init: cannot execv('/system/vendor/bin/imsqmidaemon'). ...
+#           No such file or directory
+# (ENOENT-nya menunjuk interpreternya, bukan binernya; binernya ada 120.464 B.)
+# Audit seluruh ROM: hanya ketiga file inilah biner 64-bit yang terpasang.
+#
+# Library lib-ims*/libims*_jni (15 buah) DIPERTAHANKAN — semuanya 32-bit, dan
+# pemindaian DT_NEEDED menunjukkan mereka hanya saling merujuk sesama IMS,
+# tidak ada konsumen di luar (rild maupun framework tidak menautnya). Sama
+# halnya imscmlibrary.jar dan imscm.xml: inert, tapi membuangnya adalah
+# penghematan ruang, bukan perbaikan bug.
+#
+# ims.apk sendiri MENYUSUL DIBUANG setelah terbukti menjatuhkan
+# com.android.phone — lihat catatan di bagian atas file ini.
+etc/permissions/imscm.xml:vendor/etc/permissions/imscm.xml
+etc/permissions/qti_permissions.xml:vendor/etc/permissions/qti_permissions.xml
+-framework/imscmlibrary.jar:vendor/framework/imscmlibrary.jar
+vendor/lib64/lib-dplmedia.so
+vendor/lib64/lib-ims-rcscmjni.so
+vendor/lib64/lib-imsSDP.so
+vendor/lib64/lib-imscamera.so
+vendor/lib64/lib-imsdpl.so
+vendor/lib64/lib-imsqimf.so
+vendor/lib64/lib-imsrcs.so
+vendor/lib64/lib-imsrcscm.so
+vendor/lib64/lib-imsrcscmclient.so
+vendor/lib64/lib-imsrcscmservice.so
+vendor/lib64/lib-imss.so
+vendor/lib64/lib-imsxml.so
+vendor/lib64/lib-rcsimssjni.so
+vendor/lib64/lib-rcsjni.so
+vendor/lib64/lib-rtpcommon.so
+vendor/lib64/lib-rtpcore.so
+vendor/lib64/lib-rtpdaemoninterface.so
+vendor/lib64/lib-rtpsl.so
+vendor/lib64/lib-imsvt.so
+vendor/lib64/libvoice-svc.so
+
+# Camera-actuators
+vendor/lib/libactuator_dw9714.so
+vendor/lib/libactuator_dw9714_15399.so
+vendor/lib/libactuator_dw9714_15399_camcorder.so
+vendor/lib/libactuator_dw9714_15399_camera.so
+vendor/lib/libactuator_dw9714_camcorder.so
+vendor/lib/libactuator_dw9714_camera.so
+vendor/lib/libactuator_dw9714_v78s85.so
+vendor/lib/libactuator_dw9714_v78s85_camcorder.so
+vendor/lib/libactuator_dw9714_v78s85_camera.so
+vendor/lib/libactuator_dw9718.so
+vendor/lib/libactuator_dw9718_camcorder.so
+vendor/lib/libactuator_dw9718_camera.so
+vendor/lib/libactuator_rohm_bu64243gwz.so
+vendor/lib/libactuator_rohm_bu64243gwz_camcorder.so
+vendor/lib/libactuator_rohm_bu64243gwz_camera.so
+
+# Camera-chromatix
+vendor/lib/libchromatix_hi545_15399_common.so
+vendor/lib/libchromatix_hi545_15399_default_video.so
+vendor/lib/libchromatix_hi545_15399_preview.so
+vendor/lib/libchromatix_hi545_15399_snapshot.so
+vendor/lib/libchromatix_imx179_15399_common.so
+vendor/lib/libchromatix_imx179_15399_common_new.so
+vendor/lib/libchromatix_imx179_15399_default_video.so
+vendor/lib/libchromatix_imx179_15399_hfr_120.so
+vendor/lib/libchromatix_imx179_15399_liveshot.so
+vendor/lib/libchromatix_imx179_15399_preview.so
+vendor/lib/libchromatix_imx179_15399_preview_binning.so
+vendor/lib/libchromatix_imx179_15399_preview_binning_new.so
+vendor/lib/libchromatix_imx179_15399_preview_new.so
+vendor/lib/libchromatix_imx179_15399_preview_sunny.so
+vendor/lib/libchromatix_imx179_15399_preview_sunny_new.so
+vendor/lib/libchromatix_imx179_15399_snapshot.so
+vendor/lib/libchromatix_imx179_15399_video_binning.so
+vendor/lib/libchromatix_imx179_15399_video_hd.so
+vendor/lib/libchromatix_ov5648_15399_common.so
+vendor/lib/libchromatix_ov5648_15399_default_video.so
+vendor/lib/libchromatix_ov5648_15399_default_video_hd.so
+vendor/lib/libchromatix_ov5648_15399_preview.so
+vendor/lib/libchromatix_ov5648_15399_preview_cmcc.so
+vendor/lib/libchromatix_ov5648_15399_preview_fb.so
+vendor/lib/libchromatix_ov5648_15399_small_video.so
+vendor/lib/libchromatix_ov5648_15399_snapshot.so
+vendor/lib/libchromatix_ov5648_15399_snapshot_fb.so
+vendor/lib/libchromatix_ov5648_15399_zsl.so
+vendor/lib/libchromatix_s5k3h7_15399_common.so
+vendor/lib/libchromatix_s5k3h7_15399_default_video.so
+vendor/lib/libchromatix_s5k3h7_15399_default_video_otp.so
+vendor/lib/libchromatix_s5k3h7_15399_preview.so
+vendor/lib/libchromatix_s5k3h7_15399_preview_cmcc.so
+vendor/lib/libchromatix_s5k3h7_15399_preview_new.so
+vendor/lib/libchromatix_s5k3h7_15399_preview_otp.so
+vendor/lib/libchromatix_s5k3h7_15399_preview_otp_new.so
+vendor/lib/libchromatix_s5k3h7_15399_small_video.so
+vendor/lib/libchromatix_s5k3h7_15399_snapshot.so
+vendor/lib/libchromatix_s5k3h7_15399_snapshot_cmcc.so
+vendor/lib/libchromatix_s5k3h7_15399_snapshot_otp.so
+vendor/lib/libchromatix_s5k3h7_15399_zsl_off.so
+
+# Camera -sensor
+vendor/lib/libmmcamera_hi545_15399.so
+vendor/lib/libmmcamera_imx179_15399.so
+vendor/lib/libmmcamera_ov5648_15399.so
+vendor/lib/libmmcamera_s5k3h7_15399.so
+vendor/lib/libmmcamera_s5k3h7_8916.so
+
+# Camera -eeprom
+vendor/lib/libmmcamera_gt24c64a_eeprom.so
+vendor/lib/libmmcamera_hynix_hi545_eeprom.so
+vendor/lib/libmmcamera_omnivision_5648_eeprom.so
+vendor/lib/libmmcamera_sony_imx179_eeprom.so
+vendor/lib/libmmcamera_sunny_cat24c64_eeprom.so
+vendor/lib/libmmcamera_sunny_f13s01l_3l8_eeprom.so
+vendor/lib/libmmcamera_sunny_f13s01l_eeprom.so
+vendor/lib/libmmcamera_truly_cm7700_eeprom.so
+vendor/lib/libmmcamera_truly_s5k3h7_eeprom.so
+vendor/lib/libmmcamera_truly_s5k3h7_new_eeprom.so
+
+# Camera
+vendor/bin/mm-qcamera-daemon
+vendor/lib/hw/camera.vendor.msm8916.so
+vendor/lib/libmmcamera_interface.so
+vendor/lib/libmm-qcamera.so
+vendor/lib/libqomx_core.so
+vendor/lib/libmmcamera2_c2d_module.so
+vendor/lib/libmmcamera2_cpp_module.so
+vendor/lib/libmmcamera2_frame_algorithm.so
+vendor/lib/libmmcamera2_iface_modules.so
+vendor/lib/libmmcamera2_imglib_modules.so
+vendor/lib/libmmcamera2_is.so
+vendor/lib/libmmcamera2_isp_modules.so
+vendor/lib/libmmcamera2_pproc_modules.so
+vendor/lib/libmmcamera2_sensor_modules.so
+vendor/lib/libmmcamera2_stats_algorithm.so
+vendor/lib/libmmcamera2_stats_modules.so
+vendor/lib/libmmcamera2_vpe_module.so
+vendor/lib/libmmcamera2_wnr_module.so
+vendor/lib/libmmcamera_hdr_gb_lib.so
+vendor/lib/libmmcamera_hdr_lib.so
+vendor/lib/libmmcamera_imglib.so
+vendor/lib/libmmcamera_tuning.so
+vendor/lib/libmmcamera_pdafcamif.so
+vendor/lib/libmmcamera_pdaf.so
+vendor/lib/libmmcamera_tintless_algo.so
+vendor/lib/libmmcamera_tintless_bg_pca_algo.so
+vendor/lib/libmmcamera_wavelet_lib.so
+vendor/lib/libmmipl.so
+vendor/lib/liboemcamera.so
+vendor/lib/libmmcamera_faceproc.so
+
+# Camera firmware
+vendor/firmware/cpp_firmware_v1_4_0.fw
+
+# Camera-exception
+vendor/lib/libactuator_dw9714_15035.so
+vendor/lib/libactuator_dw9714_15035_camcorder.so
+vendor/lib/libactuator_dw9714_15035_camera.so
+vendor/lib/libchromatix_ov5648_15035_common.so
+vendor/lib/libchromatix_ov5648_15035_default_video.so
+vendor/lib/libchromatix_ov5648_15035_default_video_hd.so
+vendor/lib/libchromatix_ov5648_15035_preview.so
+vendor/lib/libchromatix_ov5648_15035_preview_cmcc.so
+vendor/lib/libchromatix_ov5648_15035_preview_fb.so
+vendor/lib/libchromatix_ov5648_15035_small_video.so
+vendor/lib/libchromatix_ov5648_15035_snapshot.so
+vendor/lib/libchromatix_ov5648_15035_snapshot_fb.so
+vendor/lib/libchromatix_ov5648_15035_zsl.so
+vendor/lib/libchromatix_s5k3h7_15035_common.so
+vendor/lib/libchromatix_s5k3h7_15035_default_video.so
+vendor/lib/libchromatix_s5k3h7_15035_preview.so
+vendor/lib/libchromatix_s5k3h7_15035_preview_cmcc.so
+vendor/lib/libchromatix_s5k3h7_15035_small_video.so
+vendor/lib/libchromatix_s5k3h7_15035_snapshot.so
+vendor/lib/libchromatix_s5k3h7_15035_snapshot_cmcc.so
+vendor/lib/libchromatix_s5k3h7_15035_zsl_off.so
+vendor/lib/libmmcamera_ov5648_15035.so
+vendor/lib/libmmcamera_s5k3h7_15035.so
+
+# JPEG  --yu_jalebi
+vendor/lib/libmmjpeg_interface.so
+vendor/lib/libjpegdhw.so
+vendor/lib/libjpegehw.so
+vendor/lib/libmmjpeg.so
+vendor/lib/libmmqjpeg_codec.so
+vendor/lib/libqomx_jpegenc.so
+vendor/lib/libqomx_jpegdec.so
+
+# DEX'S
+-priv-app/qcrilmsgtunnel/qcrilmsgtunnel.apk
+-vendor/app/shutdownlistener/shutdownlistener.apk
+-vendor/lib64/libloc_api_v02.so
+-vendor/lib64/libloc_ds_api.so
+-vendor/lib64/libtime_genoff.so
+# TimeService dibuang: APK-nya di /vendor tapi device ini non-Treble, jadi
+# namespace linker sphal tidak ada dan libTimeService.so mustahil dimuat.
+# Tidak ada yang menaut pustaka itu selain dirinya sendiri; pemakai
+# time_genoff yang sesungguhnya (libril-qc-qmi-1, libdrmtime, lib-imsdpl)
+# memuat libtime_genoff.so langsung. libtime_genoff & time_daemon tetap.
+#-vendor/lib/libTimeService.so
+#-vendor/app/TimeService/TimeService.apk
+
+
+# Vendor --blobs
+lib/libFileMux.so
+lib/libmmosal.so
+lib/libmmparser_lite.so
+lib/libOmxMux.so
+lib/libOmxVpp.so
+lib/libvpplibrary.so
+lib/vendor.qti.hardware.iop@1.0.so
+lib/vendor.qti.hardware.iop@2.0.so
+vendor/bin/adsprpcd
+vendor/bin/hw/android.hardware.bluetooth@1.0-service-qti
+# Widevine DIHIDUPKAN KEMBALI (28 Agu 2026), setelah penghalang protobuf
+# terpecahkan. Catatan lama menyimpulkan dengan benar: "Widevine baru bisa hidup
+# kalau blob libprotobuf-cpp-lite.so seangkatan ikut ditambahkan."
+#
+# Pustaka itu kini DIBANGUN DARI SUMBER, bukan blob: device/oppo/A37/protobuf26
+# berisi runtime lite protobuf 3.0.0, dipasang sebagai
+# libprotobuf-cpp-lite-26-a37.so dengan symlink libprotobuf-cpp-lite.so di
+# device/oppo/A37/Android.bp. Nama polos itu belum dipakai siapa pun di
+# /vendor/lib -- salinan modern bernama libprotobuf-cpp-lite-4.25.8.so -- dan
+# hanya kedua pustaka Widevine yang menautnya (diperiksa atas seluruh blob).
+#
+# Versi 3.0.0 dipilih lewat pengukuran, bukan tebakan. Percobaan dengan 2.6.1
+# GAGAL: Arena, LazyStringOutputStream, dan WriteVarint32SlowPath tidak ada di
+# versi itu sama sekali. Arena baru muncul di 3.0, sedangkan empty_string_ dan
+# GoogleOnceInit baru dibuang setelah ~3.5, jadi versinya di antara keduanya;
+# 3.0.0 sezaman dengan HAL drm@1.1 (Android 9), era blob ini.
+#
+# Satu simbol sempat tetap hilang, MessageLite::~MessageLite(). Ia inline di
+# header dan AOSP membangun dengan -fvisibility-inlines-hidden, sehingga varian
+# D2-nya menjadi LOCAL HIDDEN. Diperbaiki dengan -fvisibility=default; kini
+# seluruh 51 simbol yang dituntut blob terpenuhi.
+#
+# HANYA service @1.1 yang dipaket. Yang @1.0 gagal dengan sebab BERBEDA dan
+# tidak tersentuh perbaikan ini: cannot locate symbol _ZTTN5wvdrm...WVDrmFactoryE,
+# karena libwvhidl.so yang tersedia adalah pasangan versi 1.1.
+#
+# libwvdrmengine.so (plugin mediadrm legacy untuk drm@1.0-impl) TIDAK dipaket:
+# libwvhidl.so sudah memuat CDM-nya sendiri (806 simbol wvcdm), jadi jalur @1.1
+# tidak membutuhkannya.
+#
+# Terbukti di perangkat: service berjalan sampai registerAsService("widevine")
+# tanpa satu pun kegagalan tautan, dan hanya berhenti di gerbang VINTF -- yang
+# ditutup oleh deklarasi di manifest.xml.
+#
+# LEVEL KEAMANAN: L3, bukan L1. Seluruh implementasi kripto ada di namespace
+# wvoec3 (OEMCrypto Level 3, perangkat lunak); nol simbol QSEECom, nol tautan ke
+# libQSEEComAPI.so. widevine.mdt di /firmware memang ada, tapi blob userspace ini
+# tidak memakainya. Konsekuensinya streaming terbatas SD.
+vendor/bin/hw/android.hardware.drm@1.1-service.widevine
+vendor/lib/libwvhidl.so
+vendor/bin/hw/vendor.qti.hardware.perf@1.0-service
+vendor/bin/irsc_util
+vendor/bin/mm-pp-daemon
+vendor/bin/netmgrd
+vendor/bin/qmuxd
+vendor/bin/qseecomd
+vendor/bin/radish
+vendor/bin/rmt_storage
+vendor/bin/time_daemon
+vendor/bin/vm_bms
+vendor/etc/data/dsi_config.xml
+vendor/etc/data/netmgr_config.xml
+vendor/etc/init/android.hardware.drm@1.1-service.widevine.rc
+vendor/etc/init/android.hardware.bluetooth@1.0-service-qti.rc
+vendor/etc/init/vendor.qti.hardware.perf@1.0-service.rc
+vendor/etc/perf/perfboostsconfig.xml
+vendor/etc/permissions/qcnvitems.xml
+vendor/etc/permissions/qcrilhook.xml
+vendor/etc/permissions/qcrilmsgtunnel.xml
+vendor/firmware/a225p5_pm4.fw
+vendor/firmware/a225_pfp.fw
+vendor/firmware/a225_pm4.fw
+vendor/firmware/a300_pfp.fw
+vendor/firmware/a300_pm4.fw
+vendor/firmware/a330_pfp.fw
+vendor/firmware/a330_pm4.fw
+vendor/firmware/a420_pfp.fw
+vendor/firmware/a420_pm4.fw
+vendor/firmware/venus.b00
+vendor/firmware/venus.b01
+vendor/firmware/venus.b02
+vendor/firmware/venus.b03
+vendor/firmware/venus.b04
+vendor/firmware/venus.mbn
+vendor/firmware/venus.mdt
+vendor/framework/qcnvitems.jar
+vendor/framework/qcrilhook.jar
+vendor/lib/com.qualcomm.qti.bluetooth_audio@1.0.so
+vendor/lib64/com.quicinc.cne.api@1.0.so
+vendor/lib64/com.quicinc.cne.constants@1.0.so
+vendor/lib64/egl/eglsubAndroid.so
+vendor/lib64/egl/eglSubDriverAndroid.so
+vendor/lib64/egl/libEGL_adreno.so
+vendor/lib64/egl/libESXEGL_adreno.so
+vendor/lib64/egl/libESXGLESv1_CM_adreno.so
+vendor/lib64/egl/libESXGLESv2_adreno.so
+vendor/lib64/egl/libGLESv1_CM_adreno.so
+vendor/lib64/egl/libGLESv2_adreno.so
+vendor/lib64/egl/libq3dtools_adreno.so
+vendor/lib64/egl/libQTapGLES.so
+vendor/lib64/egl/libRBEGL_adreno.so
+vendor/lib64/egl/libRBGLESv1_CM_adreno.so
+vendor/lib64/egl/libRBGLESv2_adreno.so
+vendor/lib/hw/android.hardware.bluetooth@1.0-impl-qti.so
+vendor/lib64/hw/flp.default.so
+vendor/lib/hw/vendor.qti.hardware.iop@1.0-impl.so
+vendor/lib64/libacdb-fts.so
+vendor/lib64/libacdbloader.so
+vendor/lib64/libacdbrtac.so
+vendor/lib64/libadiertac.so
+vendor/lib64/libadreno_utils.so
+vendor/lib64/libadsprpc.so
+vendor/lib/libaptX_encoder.so
+vendor/lib/libaptXHD_encoder.so
+vendor/lib64/libaudcal.so
+vendor/lib64/libbtnv.so
+vendor/lib64/libC2D2.so
+vendor/lib64/libc2d30-a3xx.so
+vendor/lib64/libc2d30-a4xx.so
+vendor/lib64/libCB.so
+vendor/lib64/libcneapiclient.so
+vendor/lib64/libconfigdb.so
+vendor/lib64/libdiag.so
+vendor/lib64/libdisp-aba.so
+vendor/lib/libdrmdecrypt.so
+vendor/lib64/libdrmfs.so
+vendor/lib64/libdrmtime.so
+vendor/lib64/libdsi_netctrl.so
+vendor/lib64/libdsutils.so
+vendor/lib/libfastcvopt.so
+vendor/lib/libfeedbackhandler.so
+vendor/lib64/libFlacSwDec.so
+vendor/lib64/libflp.so
+vendor/lib64/libgeofence.so
+vendor/lib64/libgsl.so
+vendor/lib64/libI420colorconvert.so
+vendor/lib64/libidl.so
+vendor/lib64/libizat_core.so
+vendor/lib64/liblbs_core.so
+vendor/lib/libldacBT_enc.so
+vendor/lib64/libllvm-glnext.so
+vendor/lib64/libllvm-qcom.so
+vendor/lib64/liblqe.so
+vendor/lib64/libmdmdetect.so
+vendor/lib64/libmm-abl-oem.so
+vendor/lib64/libmm-abl.so
+vendor/lib64/libmm-als.so
+vendor/lib64/libmm-color-convertor.so
+vendor/lib64/libmm-disp-apis.so
+vendor/lib/libmmipl.so
+vendor/lib/libmm-omxcore.so
+vendor/lib64/libmm-qdcm.so
+vendor/lib64/libnetmgr.so
+vendor/lib64/libOmxAacDec.so
+vendor/lib/libOmxAlacDec.so
+vendor/lib64/libOmxAlacDecSw.so
+vendor/lib/libOmxAmrwbplusDec.so
+vendor/lib/libOmxApeDec.so
+vendor/lib64/libOmxApeDecSw.so
+vendor/lib64/libOmxEvrcDec.so
+vendor/lib64/libOmxQcelp13Dec.so
+vendor/lib/libOmxWmaDec.so
+vendor/lib64/libOpenCL.so
+vendor/lib/libperfgluelayer.so
+vendor/lib64/libperipheral_client.so
+vendor/lib64/libqcci_legacy.so
+vendor/lib64/libqdi.so
+vendor/lib64/libqdp.so
+vendor/lib64/libqmi_cci.so
+vendor/lib64/libqmi_client_helper.so
+vendor/lib64/libqmi_client_qmux.so
+vendor/lib64/libqmi_common_so.so
+vendor/lib64/libqmi_csi.so
+vendor/lib64/libqmi_encdec.so
+vendor/lib64/libqmiservices.so
+vendor/lib64/libqmi.so
+vendor/lib64/libQSEEComAPI.so
+vendor/lib/libqti-iopd-client.so
+vendor/lib/libqti-iopd.so
+vendor/lib64/libqti-perfd-client.so
+vendor/lib/libqti-perfd.so
+vendor/lib64/libthermalclient.so
+vendor/lib/libqti-util.so
+vendor/lib/libqti-utils.so
+vendor/lib64/libril-qc-qmi-1.so
+vendor/lib64/libril-qc-radioconfig.so
+vendor/lib64/libril-qcril-hook-oem.so
+vendor/lib64/librpmb.so
+vendor/lib64/librs_adreno_sha1.so
+vendor/lib64/librs_adreno.so
+vendor/lib64/libRSDriver_adreno.so
+vendor/lib64/libsc-a3xx.so
+vendor/lib64/libscale.so
+vendor/lib64/libsmemlog.so
+vendor/lib64/libssd.so
+vendor/lib/libstlport.so
+vendor/lib64/libsystem_health_mon.so
+vendor/lib/libuiblur.so
+vendor/lib64/libxml.so
+vendor/lib/soundfx/libqcbassboost.so
+vendor/lib/soundfx/libqcreverb.so
+vendor/lib/soundfx/libqcvirt.so
+vendor/lib/vendor.qti.hardware.fm@1.0.so
+vendor/lib/vendor.qti.hardware.iop@1.0_vendor.so
+vendor/lib/vendor.qti.hardware.iop@2.0_vendor.so
+vendor/lib/vendor.qti.hardware.perf@1.0_vendor.so
