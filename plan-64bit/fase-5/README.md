@@ -146,12 +146,15 @@ SHA256 ada di `blob-baru-32bit.txt`):
 |---|---|
 | qseecom / DRM | `librpmb.so`, `libssd.so`, `libdrmtime.so` |
 | GPS | `libgeofence.so`, `liblbs_core.so`, `libloc_api_v02.so`, `libizat_core.so` |
-| Grafis 2D & RenderScript | `libC2D2.so`, `libRSDriver_adreno.so`, `librs_adreno.so`, `libCB.so`, `libscale.so` |
+| Grafis 2D | `libC2D2.so`, `libscale.so` |
 | Codec audio | `libOmxAacDec.so`, `libOmxEvrcDec.so`, `libOmxQcelp13Dec.so` |
 | Display post-processing | `libmm-qdcm.so`, `libmm-als.so` |
 | Bluetooth | `libbtnv.so` |
 
 Closure-nya sudah dihitung rekursif sampai bersih (hanya menyisakan bionic).
+
+> `libRSDriver_adreno.so`, `librs_adreno.so`, dan `libCB.so` sempat ikut
+> ditambahkan di sini, lalu **dibuang lagi** pada putaran kedua — lihat §8.c.
 
 ## 4. Bukti perbaikan, sebelum build
 
