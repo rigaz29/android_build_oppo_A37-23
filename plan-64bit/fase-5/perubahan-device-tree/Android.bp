@@ -1,0 +1,129 @@
+// Blob vendor msm8916 menaut "libstdc++.so" lewat DT_NEEDED (158 berkas,
+// termasuk camera.vendor.msm8916.so), dan tanpa salinan di /vendor/lib daemon
+// kamera gagal link:
+//   CANNOT LINK EXECUTABLE "/system/vendor/bin/mm-qcamera-daemon":
+//   library "libstdc++.so" not found
+//
+// Modul libstdc++_vendor (bionic/libc/Android.bp:1818) memasang berkasnya
+// sebagai /vendor/lib/libstdc++_vendor.so -- nama yang tidak dicari linker.
+//
+// Menambahkan stem: "libstdc++" pada modul itu SUDAH DICOBA dan menggagalkan
+// build: varian ramdisk-nya lalu bertabrakan dengan libstdc++ platform --
+//   ninja: multiple rules generate .../symbols/ramdisk/system/lib/libstdc++.so
+// Karena itu dipakai symlink, bukan penggantian nama.
+// libprotobuf-cpp-lite.so untuk blob Widevine.
+//
+// libwvhidl.so menautnya lewat DT_NEEDED dengan SONAME polos, sedangkan
+// protobuf modern di /vendor/lib bernama libprotobuf-cpp-lite-4.25.8.so.
+// Nama polos itu belum dipakai siapa pun di vendor, dan hanya pustaka Widevine
+// yang menautnya (diperiksa atas seluruh blob), jadi symlink ini tidak
+// membayangi apa pun.
+//
+// Symlink, bukan stem: memakai stem "libprotobuf-cpp-lite" membuat build gagal
+// dengan "multiple rules generate .../symbols/system/vendor/lib/
+// libprotobuf-cpp-lite.so" -- pola yang sama seperti libstdc++ di bawah.
+install_symlink {
+    name: "libprotobuf-cpp-lite-26-a37_symlink",
+    soc_specific: true,
+    installed_location: "lib/libprotobuf-cpp-lite.so",
+    symlink_target: "libprotobuf-cpp-lite-26-a37.so",
+}
+
+install_symlink {
+    name: "libstdc++_vendor_symlink",
+    soc_specific: true,
+    installed_location: "lib/libstdc++.so",
+    symlink_target: "libstdc++_vendor.so",
+}
+
+// libandroid.so dan libmedia.so untuk namespace vendor.
+//
+// Keduanya dibangun di libshims/ sebagai libandroid_a37_vendor.so dan
+// libmedia_a37_vendor.so, karena LOCAL_MODULE_STEM ditolak untuk pustaka
+// (shared_library_internal.mk:17) dan memakai nama aslinya akan bentrok dengan
+// modul platform. Symlink di bawah memberi nama yang benar-benar dicari linker.
+//
+// libandroid: blob kamera menaut lewat DT_NEEDED dan butuh 13 simbol.
+//   CANNOT LINK EXECUTABLE "/vendor/bin/mm-qcamera-daemon":
+//   library "libandroid.so" not found:
+//   needed by /system/vendor/lib/libmmcamera2_stats_modules.so
+//
+// libmedia: libril-qc-qmi-1.so menautnya tapi memakai NOL simbolnya.
+//   RILD: dlopen failed: library "libmedia.so" not found:
+//         needed by /system/vendor/lib/libril-qc-qmi-1.so
+install_symlink {
+    name: "libandroid_a37_vendor_symlink",
+    soc_specific: true,
+    installed_location: "lib/libandroid.so",
+    symlink_target: "libandroid_a37_vendor.so",
+}
+
+install_symlink {
+    name: "libandroid_a37_vendor64_symlink",
+    soc_specific: true,
+    installed_location: "lib64/libandroid.so",
+    symlink_target: "libandroid_a37_vendor64.so",
+}
+
+// libmedia.so dibutuhkan DI KEDUA ARCH. Diukur ulang 7 September 2026, sesudah
+// rild dan radio HAL dipaksa kembali 32-bit:
+//
+//   vendor/lib64  lib-dplmedia.so, lib-imscamera.so, lib-imsvt.so,
+//                 libril-qc-qmi-1.so
+//   vendor/lib    libril-qc-qmi-1.so   <-- muncul lagi begitu RIL jadi 32-bit
+//
+// Komentar sebelumnya di sini berbunyi "tidak ada blob 32-bit yang merujuknya".
+// Itu benar ketika RIL masih 64-bit, dan menjadi SALAH pada commit yang
+// memaksa RIL kembali 32-bit -- tanpa berkas ber-soname ini di vendor/lib:
+//
+//   E RILD: dlopen failed: library "libmedia.so" not found:
+//           needed by /system/vendor/lib/libril-qc-qmi-1.so
+//
+// Pelajarannya: setiap perubahan arch sebuah komponen mengubah pula arch
+// seluruh closure dependensinya. Jalankan ulang audit DT_NEEDED, jangan
+// mengandalkan catatan lama.
+install_symlink {
+    name: "libmedia_a37_vendor_symlink",
+    soc_specific: true,
+    installed_location: "lib/libmedia.so",
+    symlink_target: "libmedia_a37_vendor.so",
+}
+
+install_symlink {
+    name: "libmedia_a37_vendor64_symlink",
+    soc_specific: true,
+    installed_location: "lib64/libmedia.so",
+    symlink_target: "libmedia_a37_vendor64.so",
+}
+
+// libgui.so untuk namespace vendor.
+//
+// Berbeda dari libandroid/libmedia, libgui PUNYA varian vendor resmi di AOSP:
+// libgui_vendor (frameworks/native/libs/gui/Android.bp:581, vendor: true,
+// defaults libgui_defaults) -- pustaka libgui sungguhan, bukan stub. Karena itu
+// tidak dibuatkan shim; cukup dipasang lalu diberi nama yang dicari linker.
+//
+// Dipakai juga oleh acroreiser/ULH a6010 (camera/hal3on1/Android.mk:22) dan
+// Mi-Thorium (libshim/Android.bp:58).
+//
+//   CANNOT LINK EXECUTABLE "/system/vendor/bin/mm-qcamera-daemon":
+//   library "libgui.so" not found:
+//   needed by /system/vendor/lib/libmmcamera2_stats_modules.so
+install_symlink {
+    name: "libgui_vendor_symlink",
+    soc_specific: true,
+    installed_location: "lib/libgui.so",
+    symlink_target: "libgui_vendor.so",
+}
+
+// libcamera_client.so untuk namespace vendor/sphal.
+//
+// Isinya HANYA CameraParameters -- diukur dari blob: 137 dari 372 simbol UND-nya
+// diambil dari libcamera_client, dan seluruh 137 itu CameraParameters.
+// Lihat komentar lengkap di libshims/Android.mk.
+install_symlink {
+    name: "libcamera_client_a37_vendor_symlink",
+    soc_specific: true,
+    installed_location: "lib/libcamera_client.so",
+    symlink_target: "libcamera_client_a37_vendor.so",
+}

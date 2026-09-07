@@ -1,0 +1,11 @@
+# DIAGNOSTIK SEMENTARA - disuntikkan lewat TWRP, bukan bagian device tree.
+# Menangkap logcat sejak /data siap sampai reboot, supaya alasan
+# zygote_secondary SIGABRT terbaca. Hapus setelah selesai.
+service bootfail_log /system/bin/logcat -b all -v threadtime -f /data/bootfail.txt
+    class main
+    user root
+    group root system log readproc
+    oneshot
+
+on post-fs-data
+    start bootfail_log

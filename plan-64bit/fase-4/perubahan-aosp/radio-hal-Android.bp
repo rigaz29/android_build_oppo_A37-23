@@ -1,0 +1,45 @@
+//
+// Copyright (C) 2024 The LineageOS Project
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+cc_binary {
+    name: "android.hardware.radio@1.5-service.msm8916",
+    owner: "lineage",
+    relative_install_path: "hw",
+    vendor: true,
+    // BUILD 64-BIT: dipaksa 32-bit, pola yang sama dengan HAL kamera.
+    //
+    // Blob RIL (libril-qc-qmi-1.so dan 18 pustaka pendukungnya) berasal dari
+    // 2016. Set 32-bitnya sudah terbukti berjalan di ROM 32-bit lengkap dengan
+    // libril_shim; set 64-bit dari LOS 17.1 belum pernah diuji di Android 16
+    // dan gagal:
+    //   service 'ril-daemon0' (pid 1350) exited with status 1
+    //   init: Sending SIGKILL to service 'ril-daemon2'      (14 kali)
+    // Akibatnya IRadio tidak pernah terdaftar dan com.android.phone menggantung
+    // di IRadio.getService() -> RIL.getRadioProxy -> Waiter::wait, lalu
+    // system_server restart dan perangkat bootloop.
+    compile_multilib: "32",
+    init_rc: ["android.hardware.radio@1.5-service.msm8916.rc"],
+    srcs: [
+        "Radio.cpp",
+        "RadioIndication.cpp",
+        "RadioResponse.cpp",
+        "service.cpp",
+        "Helpers.cpp",
+        "hidl-utils.cpp",
+    ],
+    shared_libs: [
+        "libbase",
+        "libhidlbase",
+        "libutils",
+        "android.hardware.radio@1.0",
+        "android.hardware.radio@1.1",
+        "android.hardware.radio@1.2",
+        "android.hardware.radio@1.3",
+        "android.hardware.radio@1.4",
+        "android.hardware.radio@1.5",
+        "android.hidl.safe_union@1.0",
+    ],
+}
