@@ -98,6 +98,27 @@ batas lunak yang dilampaui Go daripada mati.
 Diganti dengan menaikkan swap ke 24 GB, yang menyelesaikan sebabnya, bukan
 gejalanya.
 
+> **KOREKSI 7 September 2026 — kesimpulan di atas hanya berlaku untuk build
+> 32-bit.**
+>
+> Pada build 64-bit, swap saja TIDAK cukup. Diukur langsung:
+>
+> ```
+> soong_build  RSS 10,4 GB + swap 30,3 GB = ~41 GB
+> sistem       RAM 11 GB, swap 31 GB -> sisa 425 MB, RAM sisa 151 MB
+> ```
+>
+> Build menuju OOM setelah 29 menit. Sebabnya: Go tidak memperlakukan swap
+> sebagai tekanan memori, jadi heap tumbuh tanpa rem selama masih ada tempat —
+> menaikkan swap justru memberinya lebih banyak ruang untuk tumbuh.
+>
+> Patch `build_soong/0001-soong-hormati-SOONG_GOMEMLIMIT.patch` karena itu
+> DIPAKAI LAGI, dan `tools/build.sh` kini menyetel `SOONG_GOMEMLIMIT=6GiB`
+> secara baku. Ongkos waktunya tetap nyata dan tetap sepadan.
+>
+> Paragraf di atas sengaja tidak dihapus: ia mencatat pengukuran 32-bit yang
+> memang benar pada konteksnya. Yang keliru adalah menganggapnya berlaku umum.
+
 ## Koreksi besar: namespace linker vendor
 
 Dua patch linkerconfig yang sempat ada di kit ini SUDAH DIBUANG, dan direktori
