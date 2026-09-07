@@ -1,0 +1,72 @@
+From: Claude Opus 5 <noreply@anthropic.com>
+Subject: hwui: mundur ke ashmem bila kernel tanpa sealing memfd
+
+--- a/libs/hwui/jni/Bitmap.cpp
++++ b/libs/hwui/jni/Bitmap.cpp
+@@ -769,6 +769,57 @@
+     return STATUS_OK;
+ }
+ 
++// A37 (msm8916, kernel 3.10.108): kernel ini punya memfd_create hasil backport
++// TAPI TANPA infrastruktur sealing. Diukur di perangkat dengan probe syscall
++// mentah, 7 September 2026:
++//
++//   memfd_create(MFD_CLOEXEC|MFD_ALLOW_SEALING) -> fd 3   BERHASIL
++//   fcntl(fd, F_ADD_SEALS, F_SEAL_FUTURE_WRITE) -> -EINVAL
++//   fcntl(fd, F_GET_SEALS)                      -> -EINVAL
++//
++// Sesuai sumber kernelnya: mm/shmem.c mendefinisikan SYSCALL_DEFINE2(memfd_create)
++// dan uapi/linux/memfd.h mendefinisikan MFD_ALLOW_SEALING, tetapi tidak ada satu
++// pun F_ADD_SEALS / F_SEAL_* di seluruh pohon kernel.
++//
++// writeBlob() di bawah memakai memfd tanpa memeriksa dukungan sealing, sehingga
++// F_ADD_SEALS yang gagal langsung menjadi STATUS_UNKNOWN_ERROR dan naik sebagai
++//
++//   java.lang.RuntimeException: Could not copy bitmap to parcel blob
++//     at android.graphics.Bitmap.nativeWriteToParcel
++//     at android.media.MediaMetadata.writeToParcel
++//     at android.media.session.MediaSession.setMetadata
++//
++// Akibatnya SETIAP aplikasi yang memasang metadata sesi media dengan gambar
++// sampul mati seketika saat mulai memutar -- terlihat pada YouTube ReVanced dan
++// PipePipe.
++//
++// Pola probe-lalu-mundur ini BUKAN hal baru di pohon ini; dua tempat lain sudah
++// melakukannya dan itulah sebabnya keduanya baik-baik saja di perangkat ini:
++//
++//   system/core/libcutils/ashmem-dev.cpp   has_memfd_support()
++//   art/libartbase/base/memfd.cc           IsSealFutureWriteSupported()
++//
++// Yang dilakukan di sini sama: probe sekali, lalu pakai jalur ashmem bila kernel
++// tidak bisa menyegel. Pada kernel yang mendukung sealing, perilakunya tidak
++// berubah sama sekali.
++static bool memfdSealingSupported() {
++    static const bool supported = []() {
++        base::unique_fd fd(syscall(__NR_memfd_create, "hwui_seal_probe",
++                                   MFD_CLOEXEC | MFD_ALLOW_SEALING));
++        if (fd.get() < 0) {
++            ALOGI("hwui: memfd_create tidak tersedia (%s), memakai ashmem", strerror(errno));
++            return false;
++        }
++        if (fcntl(fd.get(), F_ADD_SEALS, F_SEAL_FUTURE_WRITE) == -1) {
++            ALOGI("hwui: kernel tanpa dukungan sealing memfd (%s), memakai ashmem",
++                  strerror(errno));
++            return false;
++        }
++        return true;
++    }();
++    return supported;
++}
++
+ static binder_status_t writeBlob(AParcel* parcel, uint64_t bitmapId, const SkBitmap& bitmap,
+                                  bool immutable) {
+     const size_t size = bitmap.computeByteSize();
+@@ -784,7 +835,7 @@
+                                             bitmap.width(), bitmap.height(), size);
+         base::unique_fd fd;
+ 
+-        if (com::android::graphics::hwui::flags::bitmap_use_memfd()) {
++        if (com::android::graphics::hwui::flags::bitmap_use_memfd() && memfdSealingSupported()) {
+             fd.reset(syscall(__NR_memfd_create, ashmemId.c_str(), MFD_CLOEXEC | MFD_ALLOW_SEALING));
+             if (fd.get() < 0) {
+                 return STATUS_NO_MEMORY;
