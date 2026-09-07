@@ -93,6 +93,7 @@ if [ -z "$JOBS" ]; then
   fi
 else
   echo "  -j       : $JOBS  (dipaksa lewat --jobs)"
+  echo "  gomemlim : ${SOONG_GOMEMLIMIT:-6GiB}  (rem heap soong_build)"
 fi
 
 # --- pemeriksaan pra-build -----------------------------------------------
@@ -161,8 +162,24 @@ fi
 # --- jalankan -------------------------------------------------------------
 echo
 echo "  log      : $LOG"
+# SOONG_GOMEMLIMIT wajib pada build 64-bit. Diukur 7 September 2026: tanpa itu
+# soong_build menumpuk 10,4 GB RSS + 30,3 GB swap = ~41 GB, menguras swap 31 GB
+# sampai habis dan menuju OOM. Go tidak melihat swap sebagai tekanan memori,
+# jadi heap-nya tumbuh tanpa rem selama masih ada tempat.
+#
+# Catatan di patches/README-bpfless.md yang menyimpulkan "swap saja cukup, patch
+# GOMEMLIMIT dicabut" berasal dari build 32-bit, yang heap hidupnya ~10 GB.
+# Build 64-bit jauh lebih rakus, jadi kesimpulan itu TIDAK berlaku di sini.
+#
+# Ongkosnya nyata: GC bekerja lebih sering, build penuh 32-bit dulu 8 -> 27
+# menit. Itu tetap jauh lebih murah daripada OOM setelah setengah jam.
+#
+# Patch yang membacanya ada di build/soong/ui/build/soong.go -- soong_build
+# dijalankan dengan `env -i`, sehingga GOMEMLIMIT dari luar tidak diteruskan
+# tanpa patch itu. Lihat patches/build_soong/0001-soong-hormati-SOONG_GOMEMLIMIT.patch
 RUN="export BUILD_USERNAME=\${BUILD_USERNAME:-\$(id -un)} \
 BUILD_HOSTNAME=\${BUILD_HOSTNAME:-\$(hostname)} \
+SOONG_GOMEMLIMIT=\${SOONG_GOMEMLIMIT:-6GiB} \
 USE_CCACHE=1 CCACHE_EXEC=\$(command -v ccache) CCACHE_DIR=\${CCACHE_DIR:-\$HOME/.ccache}; \
 cd '$TREE'; source build/envsetup.sh >/dev/null 2>&1; \
 lunch '$COMBO' >/dev/null 2>&1 || { echo 'lunch GAGAL: $COMBO'; exit 2; }; \
