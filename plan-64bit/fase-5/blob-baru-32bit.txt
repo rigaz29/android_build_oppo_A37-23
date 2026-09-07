@@ -1,30 +1,40 @@
-# Blob 32-bit yang ditambahkan di Fase 5
+# Blob 32-bit yang ditambahkan di Fase 5 (keadaan AKHIR)
 #
 # Sumber: github.com/rigaz29/rb-vendor_oppo_A37 cabang lineage-23,
 #         berkas A37/proprietary/vendor/lib/<nama>
-# Semua sudah diverifikasi ELF32 ARM sebelum dipasang.
+# Semua diverifikasi ELF32 ARM, dan kehadirannya di image hasil build
+# diperiksa satu per satu -- bukan hanya di daftar.
 #
-# NAMA                             UKURAN  SHA256 (12 pertama)
-  libC2D2.so                       120672  49b28dbeabb9
-  libCB.so                         773660  a9f642fe0fdc
-  libOmxAacDec.so                   65920  7945d2557649
-  libOmxEvrcDec.so                 156916  14a4dc86bf4e
-  libOmxQcelp13Dec.so              161168  2c58fa10408d
-  libRSDriver_adreno.so            141748  70dcbd3d4126
-  libadreno_utils.so                26216  ead7bfe7048b
-  libbtnv.so                        15968  9b8f58882c6d
-  libdrmtime.so                      9396  a89322f1384c
-  libgeofence.so                    42616  5198e624a31d
-  libgsl.so                        256564  c84e8709035a
-  libizat_core.so                   67212  a77291de0337
-  liblbs_core.so                   128688  35d2c9f95236
-  libloc_api_v02.so                108156  5191af61a11f
-  libmm-als.so                      22036  767854ff90ad
-  libmm-qdcm.so                     75356  83db9413f602
-  librpmb.so                        14192  7afeaaaa7484
-  librs_adreno.so                  288712  751c1885c4c6
-  libscale.so                       26200  0ddda6a74b21
-  libssd.so                          5296  d9057bd3c3fc
-  libxml.so                         34380  59ef2c0195d5
-  com.quicinc.cne.api@1.0.so       256300  a9ec7da67073
-  com.quicinc.cne.constants@1.0.so    37028  aa98212a7cb4
+# DIBUANG LAGI pada putaran kedua (lihat README fase-5 bagian 8.c):
+#   libRSDriver_adreno.so, librs_adreno.so, libCB.so
+#   Menutup rantainya menuntut libllvm-qcom.so 19 MB untuk kode yang
+#   tidak pernah jalan -- ROM ini tidak punya proses aplikasi 32-bit.
+#
+# NAMA                                UKURAN  SHA256 (12 pertama)
+  libC2D2.so                          120672  49b28dbeabb9
+  libOmxAacDec.so                      65920  7945d2557649
+  libOmxEvrcDec.so                    156916  14a4dc86bf4e
+  libOmxQcelp13Dec.so                 161168  2c58fa10408d
+  libadreno_utils.so                   26216  ead7bfe7048b
+  libbtnv.so                           15968  9b8f58882c6d
+  libc2d30-a3xx.so                    707920  e5f10e9ff175
+  libc2d30-a4xx.so                    690524  bf760bf90e0b
+  libdrmtime.so                         9396  a89322f1384c
+  libgeofence.so                       42616  5198e624a31d
+  libgsl.so                           256564  c84e8709035a
+  libizat_core.so                      67212  a77291de0337
+  liblbs_core.so                      128688  35d2c9f95236
+  libloc_api_v02.so                   108156  5191af61a11f
+  libloc_ds_api.so                     26108  0124ea9a0287
+  libmm-als.so                         22036  767854ff90ad
+  libmm-qdcm.so                        75356  83db9413f602
+  librpmb.so                           14192  7afeaaaa7484
+  libscale.so                          26200  0ddda6a74b21
+  libssd.so                             5296  d9057bd3c3fc
+  libxml.so                            34380  59ef2c0195d5
+  com.quicinc.cne.api@1.0.so          256300  a9ec7da67073
+  com.quicinc.cne.constants@1.0.so     37028  aa98212a7cb4
+
+# Dikembalikan setelah sempat keliru dibuang (lihat 3.d):
+  egl/libESXEGL_adreno.so              73172  b3ca109a5a9d
+  egl/libRBEGL_adreno.so              174520  10addd7560c4
