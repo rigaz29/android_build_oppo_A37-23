@@ -332,6 +332,7 @@ vendor/lib/egl/eglSubDriverAndroid.so
 vendor/lib64/egl/libEGL_adreno.so
 vendor/lib/egl/libEGL_adreno.so
 vendor/lib64/egl/libESXEGL_adreno.so
+vendor/lib/egl/libESXEGL_adreno.so
 vendor/lib64/egl/libESXGLESv1_CM_adreno.so
 vendor/lib64/egl/libESXGLESv2_adreno.so
 vendor/lib64/egl/libGLESv1_CM_adreno.so
@@ -343,6 +344,7 @@ vendor/lib/egl/libq3dtools_adreno.so
 vendor/lib64/egl/libQTapGLES.so
 vendor/lib/egl/libQTapGLES.so
 vendor/lib64/egl/libRBEGL_adreno.so
+vendor/lib/egl/libRBEGL_adreno.so
 vendor/lib64/egl/libRBGLESv1_CM_adreno.so
 vendor/lib64/egl/libRBGLESv2_adreno.so
 vendor/lib/hw/android.hardware.bluetooth@1.0-impl-qti.so
@@ -369,9 +371,10 @@ vendor/lib/libbtnv.so
 vendor/lib64/libC2D2.so
 vendor/lib/libC2D2.so
 vendor/lib64/libc2d30-a3xx.so
+vendor/lib/libc2d30-a3xx.so
 vendor/lib64/libc2d30-a4xx.so
+vendor/lib/libc2d30-a4xx.so
 vendor/lib64/libCB.so
-vendor/lib/libCB.so
 vendor/lib64/libcneapiclient.so
 vendor/lib/libcneapiclient.so
 vendor/lib64/libconfigdb.so
@@ -483,9 +486,7 @@ vendor/lib64/librpmb.so
 vendor/lib/librpmb.so
 vendor/lib64/librs_adreno_sha1.so
 vendor/lib64/librs_adreno.so
-vendor/lib/librs_adreno.so
 vendor/lib64/libRSDriver_adreno.so
-vendor/lib/libRSDriver_adreno.so
 vendor/lib64/libsc-a3xx.so
 vendor/lib64/libscale.so
 vendor/lib/libscale.so

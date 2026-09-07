@@ -124,11 +124,18 @@ Konsumen 32-bit-nya nyata dan sedang berjalan: `camera.vendor.msm8916.so`
 (dimuat `android.hardware.camera.provider-service_32.lineage`),
 `gralloc.msm8916.so`, `copybit.msm8916.so`, `hwcomposer.msm8916.so`.
 
-Keduanya ditambahkan. Sebaliknya, driver debug `libESX*_adreno.so` dan
-`libRB*_adreno.so` **dibuang** dari sisi 32-bit: `ro.hardware.egl = adreno`
-sehingga hanya jalur `libEGL_adreno` yang pernah dimuat, dan mempertahankannya
-menuntut `libllvm-glnext.so` (8,1 MB) + `libsc-a3xx.so` (4,8 MB) untuk sesuatu
-yang tidak pernah dipakai.
+Keduanya ditambahkan.
+
+Varian `libESX*GLES*_adreno.so` dan `libRB*GLES*_adreno.so` **dibuang** dari sisi
+32-bit: `ro.hardware.egl = adreno` sehingga hanya jalur `libEGL_adreno` yang
+pernah dimuat, dan mempertahankannya menuntut `libllvm-glnext.so` (8,1 MB) +
+`libsc-a3xx.so` (4,8 MB) untuk sesuatu yang tidak pernah dipakai.
+
+> **Koreksi.** Percobaan pertama membuang SELURUH `libESX*`/`libRB*`, termasuk
+> `libESXEGL_adreno.so` dan `libRBEGL_adreno.so`. Itu keliru: kedua berkas itu
+> dituntut lewat `DT_NEEDED` oleh `eglSubDriverAndroid.so` dan `eglsubAndroid.so`
+> — dua sub-driver yang justru ada di jalur utama dan tetap dipasang. Keduanya
+> dikembalikan (72 KB + 172 KB). Yang dibuang hanya varian GLES-nya.
 
 ### 3.e 18 blob `dlopen` 32-bit
 
@@ -200,3 +207,61 @@ perubahan-device-tree/libshims-Android.mk  stub libmedia dua arch
 Salinan disimpan di sini karena git di `device/oppo/A37`, `vendor/oppo/A37`, dan
 `hardware/ril` rusak sejak `.repo/project-objects` dihapus untuk membebaskan
 disk — `.git` di sana berupa symlink ke direktori itu.
+
+## 8. Putaran kedua: apa yang baru ketahuan setelah image jadi
+
+Audit atas image hasil build pertama menemukan **lapisan kedua** — blob yang baru
+ditambahkan ternyata memuat blob lain lagi. Tiga pelajaran, semuanya dibayar
+dengan siklus build ulang:
+
+### 8.a Satu pohon vendor memakai DUA mekanisme pemasangan
+
+`libloc_api_v02` dan `libloc_ds_api` bukan entri `PRODUCT_COPY_FILES` melainkan
+`cc_prebuilt_library_shared` di `vendor/oppo/A37/Android.bp` dengan
+`compile_multilib: "64"`. Menambahkan barisnya ke `A37-vendor.mk` karena itu
+**tidak berpengaruh sama sekali**, dan build tetap sukses tanpa peringatan.
+
+Ketahuan hanya karena isi image diperiksa satu per satu — 22 dari 23 blob masuk.
+
+> Memeriksa daftar blob tidak cukup. Yang harus diperiksa adalah isi image yang
+> benar-benar terbangun.
+
+### 8.b Closure harus dihitung sampai berhenti sendiri, lalu disimulasikan
+
+Putaran kedua memakai iterasi: unduh, hitung `DT_NEEDED` + string `dlopen`, ulangi
+sampai tidak ada kebutuhan baru. Hasilnya diverifikasi terhadap **simulasi** isi
+`vendor/lib` pasca-perubahan sebelum build dijalankan, bukan sesudahnya.
+
+### 8.c Rantai RenderScript 32-bit dibuang, rantai GPS dipertahankan
+
+|  | Rantai RS 32-bit | Rantai GPS 32-bit |
+|---|---|---|
+| Terpakai? | Tidak | Tidak |
+| Kenapa tidak | HAL-nya hanya dimuat proses aplikasi; ROM ini tidak punya proses aplikasi 32-bit | HAL gnss berjalan 64-bit, memuat `lib64/hw/gps.msm8916.so` |
+| Ongkos menutup | `libllvm-qcom.so` **19 MB** | `libloc_ds_api.so` **28 KB** |
+| Keputusan | dibuang | dilengkapi |
+
+Perbedaan perlakuannya semata ongkos, dan disengaja.
+
+Tersisa satu `dlopen` menggantung yang disadari:
+`android.hardware.renderscript@1.0-impl.so` 32-bit (modul AOSP, bukan milik pohon
+ini) tidak akan menemukan `libRSDriver_adreno.so`. Ia tidak pernah dimuat.
+
+## 9. Build: `SOONG_GOMEMLIMIT` wajib untuk 64-bit
+
+Build pertama menuju OOM setelah 29 menit. Diukur saat itu:
+
+```
+soong_build   RSS 10,4 GB + swap 30,3 GB = ~41 GB
+sistem        RAM 11 GB, swap 31 GB -> sisa 425 MB
+```
+
+Go tidak memperlakukan swap sebagai tekanan memori, jadi menaikkan swap justru
+memberi heap lebih banyak ruang untuk tumbuh. `tools/build.sh` kini menyetel
+`SOONG_GOMEMLIMIT=6GiB` secara baku; jejaknya turun ke ~20 GB dan stabil.
+
+Ini mengoreksi `patches/README-bpfless.md` yang menyimpulkan "swap saja cukup" —
+kesimpulan itu diambil dari build 32-bit dan tidak berlaku untuk 64-bit.
+
+Ongkosnya nyata dan harus diperhitungkan: tahap analisis `soong_build`
+memakan **~60 menit** per build pada mesin ini.
